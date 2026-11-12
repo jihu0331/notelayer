@@ -222,11 +222,12 @@ function startNotelayer() {
     // 막대 상태
     $("docSelect").value = d.id;
     $("deleteDocBtn").hidden = !userDocIds.has(d.id);
-    document.querySelectorAll("#templateButtons button").forEach((b) => {
-      b.setAttribute("aria-pressed", String(b.dataset.id === ui.tpl));
-      b.disabled = !d.templates.includes(b.dataset.id);
-      b.title = b.disabled ? "이 예시 문서에는 맞지 않는 템플릿입니다" : "";
-    });
+    // 템플릿 고르기: 지금 문서에 맞는 템플릿만 보여 준다
+    const tplSel = $("tplSelect");
+    tplSel.replaceChildren(...d.templates.map((id) => { const o = el("option", null, TEMPLATES[id].name); o.value = id; return o; }));
+    tplSel.value = ui.tpl;
+    tplSel.disabled = d.templates.length < 2;
+    tplSel.title = tplSel.disabled ? "이 예시 문서에는 이 템플릿 하나만 맞습니다" : "";
     const hasTr = d.blocks.some((b) => b.tr);
     $("layerTr").disabled = !hasTr;
     $("trLabel").classList.toggle("off", !hasTr);
@@ -786,11 +787,15 @@ function startNotelayer() {
     if (!d.templates.includes(ui.tpl)) ui.tpl = d.templates[0];
     render();
   };
-  for (const [id, t] of Object.entries(TEMPLATES)) {
-    const b = el("button", null, t.name); b.dataset.id = id;
-    b.onclick = () => { ui.tpl = id; render(); };
-    $("templateButtons").append(b);
-  }
+  $("tplSelect").onchange = (e) => { ui.tpl = e.target.value; render(); };
+
+  // "⋯" 메뉴: 보기(층·펼치기)와 파일(PDF·백업). 층은 여러 개를 연달아 바꿀 수 있게 열어 두고, 파일 동작은 누르면 닫는다
+  const menu = $("moreMenu");
+  const setMenu = (open) => { menu.hidden = !open; $("moreBtn").setAttribute("aria-expanded", String(open)); };
+  $("moreBtn").onclick = (e) => { e.stopPropagation(); setMenu(menu.hidden); };
+  document.addEventListener("click", (e) => { if (!menu.hidden && !e.composedPath().includes(menu)) setMenu(false); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") setMenu(false); });
+  for (const id of ["printBtn", "exportBtn", "importBtn"]) $(id).addEventListener("click", () => setMenu(false));
   for (const [id, key] of [["layerMarks", "marks"], ["layerBoxes", "boxes"], ["layerMine", "mine"], ["layerTr", "tr"]]) {
     $(id).addEventListener("change", (e) => { ui.layers[key] = e.target.checked; render(); });
   }

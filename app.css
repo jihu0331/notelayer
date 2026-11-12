@@ -235,3 +235,36 @@
 .side .sum-body[data-focus="circle"] .item-wrap:not(.dim) .k-circle,
 .side .sum-body[data-focus="highlight"] .item-wrap:not(.dim) .k-highlight,
 .side .sum-body[data-focus="wave"] .item-wrap:not(.dim) .k-wave { font-weight: 600; }
+
+/* ── 위쪽 막대: 한 줄, 자주 쓰는 것만 ── */
+.bar { flex-wrap: nowrap; gap: 10px; padding: 8px 16px; }
+.bar .brand { font: 700 15px var(--ui); letter-spacing: -.01em; color: #111827; margin-right: 4px; }
+.bar .pick { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.bar .pick select { border: 1px solid #e5e7eb; border-radius: 8px; padding: 6px 28px 6px 10px; background: #fff; font: 14px var(--ui); color: #111827;
+  max-width: 260px; text-overflow: ellipsis; cursor: pointer; }
+.bar .pick select:disabled { color: #6b7280; cursor: default; background: #f9fafb; }
+.bar .pick.tpl { gap: 6px; }
+.bar .pick-label { font-size: 12px; color: #6b7280; }
+.bar .icon-btn { width: 32px; height: 32px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; cursor: pointer;
+  font: 600 18px/1 var(--ui); color: #374151; display: inline-grid; place-items: center; flex: none; }
+.bar .icon-btn:hover, .bar .pick select:hover { border-color: #d1d5db; background: #f9fafb; }
+.bar .act { white-space: nowrap; }
+.bar .switch { white-space: nowrap; font-weight: 500; color: #374151; }
+.more { position: relative; flex: none; }
+.menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 50; min-width: 210px; padding: 6px; background: #fff; border: 1px solid #e5e7eb;
+  border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,.14); font: 14px var(--ui); color: #1f2328; }
+.menu[hidden] { display: none; }
+.menu-title { padding: 6px 10px 2px; font-size: 12px; font-weight: 600; color: #9ca3af; }
+.menu label, .menu-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border: 0; background: transparent;
+  border-radius: 8px; cursor: pointer; font: inherit; color: inherit; text-align: left; }
+.menu label:hover, .menu-item:hover { background: #f3f4f6; }
+.menu label.off { opacity: .4; cursor: not-allowed; }
+.menu-sep { height: 1px; background: #f0f0f0; margin: 6px 4px; }
+@media (max-width: 760px) {
+  .bar { flex-wrap: wrap; }
+  .bar .brand, .bar .pick-label { display: none; }
+  .bar .pick select { max-width: 46vw; }
+  /* 좁은 화면: 메뉴를 막대 바로 아래에 화면 폭에 맞춰 띄운다 */
+  .more { position: static; }
+  .menu { position: fixed; left: 16px; right: 16px; top: calc(var(--bar-h, 52px) + 4px); min-width: 0; }
+}

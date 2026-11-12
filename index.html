@@ -11,26 +11,32 @@
 </head>
 <body data-template="exam">
 <div class="bar" id="bar">
-  <span class="title">문서</span>
-  <select id="docSelect" aria-label="문서 고르기"></select>
-  <button class="act primary" id="newDocBtn" title="글 붙여 넣기·파일·웹페이지로 새 문서 만들기">+ 새 문서</button>
-  <button class="act" id="aiBtn" title="쓰는 LLM 으로 지금 문서에 표시·설명 만들기">AI 표시 만들기</button>
-  <span class="title">템플릿</span>
-  <div class="group seg" id="templateButtons"></div>
-  <span class="title">층</span>
-  <div class="group">
-    <label><input type="checkbox" id="layerMarks" checked> AI 표시</label>
-    <label><input type="checkbox" id="layerBoxes" checked> AI 설명</label>
-    <label><input type="checkbox" id="layerMine" checked> 내 표시·메모</label>
-    <label id="trLabel"><input type="checkbox" id="layerTr" checked> 번역</label>
+  <span class="brand">notelayer</span>
+  <div class="pick">
+    <select id="docSelect" aria-label="문서"></select>
+    <button class="icon-btn" id="newDocBtn" title="새 문서 (글 붙여 넣기·파일·웹페이지)" aria-label="새 문서">+</button>
   </div>
+  <label class="pick tpl"><span class="pick-label">템플릿</span><select id="tplSelect" aria-label="템플릿"></select></label>
   <span class="spacer"></span>
-  <button class="act" id="expandAll">설명 모두 펼치기</button>
-  <button class="act" id="printBtn">PDF로 저장</button>
-  <button class="act" id="exportBtn" title="고친 내용을 파일로 백업">내보내기</button>
-  <button class="act" id="importBtn" title="백업 파일 불러오기">불러오기</button>
-  <input type="file" id="importFile" accept="application/json" hidden>
+  <button class="act primary" id="aiBtn" title="쓰는 LLM 으로 지금 문서에 표시·설명·요약 만들기">AI 표시 만들기</button>
   <button class="switch" id="editSwitch" role="switch" aria-checked="false"><span class="track"></span>수정 모드</button>
+  <div class="more">
+    <button class="icon-btn" id="moreBtn" aria-haspopup="menu" aria-expanded="false" aria-label="더 보기" title="보기·파일">⋯</button>
+    <div class="menu" id="moreMenu" role="menu" hidden>
+      <div class="menu-title">보기</div>
+      <label><input type="checkbox" id="layerMarks" checked> AI 표시</label>
+      <label><input type="checkbox" id="layerBoxes" checked> AI 설명</label>
+      <label><input type="checkbox" id="layerMine" checked> 내 표시·메모</label>
+      <label id="trLabel"><input type="checkbox" id="layerTr" checked> 번역</label>
+      <button class="menu-item" id="expandAll">설명 모두 펼치기</button>
+      <div class="menu-sep"></div>
+      <div class="menu-title">파일</div>
+      <button class="menu-item" id="printBtn">PDF로 저장</button>
+      <button class="menu-item" id="exportBtn" title="넣은 문서와 고친 내용을 파일로 백업">내보내기 (백업)</button>
+      <button class="menu-item" id="importBtn" title="백업 파일 불러오기">불러오기</button>
+      <input type="file" id="importFile" accept="application/json" hidden>
+    </div>
+  </div>
 </div>
 <div class="editbar" id="editbar">
   <span>수정 모드 — 표시를 누르면 종류를 바꾸거나 지울 수 있고, 글자를 끌어 고르면 새 표시나 메모를 달 수 있습니다. 설명 상자와 메모는 글을 누르면 치는 대로 바로 바뀌고, 꼬리표를 누르면 설명 종류를 바꿀 수 있습니다. 원문 글자는 바뀌지 않습니다.</span>
