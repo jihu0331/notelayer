@@ -26,7 +26,7 @@ function startNotelayer() {
   // 문서별 상태: 템플릿별 표시·설명(고친 내용 포함)과 내 메모. 이 브라우저에만 저장한다
   function freshDocState(d) {
     const ann = {};
-    for (const [t, a] of Object.entries(d.annotations)) ann[t] = { marks: withIds(a.marks), boxes: withIds(a.boxes), outline: a.outline ? structuredClone(a.outline) : null, concepts: a.concepts ? structuredClone(a.concepts) : null };
+    for (const [t, a] of Object.entries(d.annotations)) ann[t] = { marks: withIds(a.marks), boxes: withIds(a.boxes), concepts: a.concepts ? structuredClone(a.concepts) : null };
     return { ann, memos: withIds(d.memos) };
   }
   function loadState() {
@@ -39,7 +39,7 @@ function startNotelayer() {
   function save() { try { localStorage.setItem(STORE, JSON.stringify(state)); } catch {} }
 
   const state = loadState();
-  const ui = { doc: DOCS[0].id, tpl: DOCS[0].templates[0], editing: false, summary: false, focus: null, sumTab: "concepts", concept: null, layers: { marks: true, boxes: true, mine: true, tr: true } };
+  const ui = { doc: DOCS[0].id, tpl: DOCS[0].templates[0], editing: false, summary: false, focus: null, concept: null, layers: { marks: true, boxes: true, mine: true, tr: true } };
   let focusId = null;           // 새로 단 메모: 그려진 뒤 바로 입력칸에 커서를 둔다
   const openIds = new Set();    // 펼쳐 둔 상자
   let circleRanges = [];
@@ -370,9 +370,7 @@ function startNotelayer() {
     return m ? toRange(m).getBoundingClientRect().top : null;
   }
 
-  // ── 오른쪽 요약: 원문 문장 그대로, 묶음과 순서는 이해하기 쉽게, 꼭 필요한 문장만 ──
-  // 추가 설명은 본문의 설명 상자(LLM)가 맡고, 요약은 구조와 핵심만 보여 준다.
-  // 요약 구조(outline)가 있으면 그 묶음·순서를 따르고, 없으면 핵심어마다 묶음을 만든다.
+  // ── 오른쪽 요약 = 개념 구조도. 추가 설명은 본문의 설명 상자(LLM)가 맡는다 ──
   // 문장 나누기: 마침표·물음표·느낌표 뒤에 빈칸이 오거나 문단이 끝나는 곳. "HTTP/1.1" 처럼 뒤에 글자가 붙은 점은 넘긴다
   function sentencesOf(text) {
     const out = [];
@@ -395,78 +393,6 @@ function startNotelayer() {
     const s = sentencesOf(b.text).find(([a, z]) => offset >= a && offset < z);
     return s ? { p, start: s[0], end: s[1], key: `${p}:${s[0]}`, text: b.text.slice(s[0], s[1]) } : null;
   }
-  const byDoc = (a, b) => a.p - b.p || a.start - b.start;
-
-  function buildSummary() {
-    const { d, ann } = cur();
-    // 요약에 쓰는 표시는 핵심어와 외울 문장(꼭 필요한 것)뿐. 확인 필요·메모는 본문에서 본다
-    const marks = visibleMarks(ann).filter((m) => m.kind === "circle" || m.kind === "highlight")
-      .map((m) => ({ m, loc: locate(m.p, m.quote, m.at) })).filter((x) => x.loc);
-    const used = new Set();
-    const take = (s) => { if (!s || used.has(s.key)) return null; used.add(s.key); return s; };
-    const candidates = [];
-    for (const x of marks) {
-      const s = sentenceAt(x.m.p, x.loc.start);
-      if (s && !candidates.some((c) => c.key === s.key)) candidates.push(s);
-    }
-    candidates.sort(byDoc);
-    const sections = [];
-    const outline = ann.outline ?? d.annotations?.[ui.tpl]?.outline;
-    if (Array.isArray(outline) && outline.length) {
-      for (const sec of outline) {
-        const items = [];
-        for (const it of sec.items ?? []) {
-          const loc = locate(it.p, it.quote);
-          const s = loc && take(sentenceAt(it.p, loc.start));
-          if (s) items.push(s);
-        }
-        if (items.length) sections.push({ title: sec.title, items });
-      }
-      const rest = candidates.filter((s) => !used.has(s.key)).map(take);
-      if (rest.length) sections.push({ title: "그 밖의 핵심", items: rest });
-      return { sections, marks, source: "outline" };
-    }
-    // 구조가 없을 때: 핵심어(동그라미)가 처음 나오는 순서대로 묶음을 만든다.
-    // 먼저 핵심어마다 자기 동그라미가 있는 문장을 배정하고, 남은 문장은 처음 언급한 핵심어 묶음에 넣는다
-    const seen = new Set();
-    const groups = [];
-    const keywords = marks.filter((x) => x.m.kind === "circle").sort((a, b) => a.m.p - b.m.p || a.loc.start - b.loc.start);
-    for (const k of keywords) {
-      const word = k.m.quote.toLowerCase();
-      if (seen.has(word)) continue;
-      seen.add(word);
-      const own = take(sentenceAt(k.m.p, k.loc.start));
-      groups.push({ title: k.m.quote, word, items: own ? [own] : [] });
-    }
-    for (const s of candidates) {
-      if (used.has(s.key)) continue;
-      const g = groups.find((x) => s.text.toLowerCase().includes(x.word));
-      if (g) g.items.push(take(s));
-    }
-    for (const g of groups) if (g.items.length) sections.push({ title: g.title, items: g.items.sort(byDoc) });
-    const rest = candidates.filter((s) => !used.has(s.key)).map(take);
-    if (rest.length) sections.push({ title: sections.length ? "그 밖의 핵심" : "핵심", items: rest });
-    return { sections, marks, source: "auto" };
-  }
-
-  // 요약 안의 문장: 원문 글자 그대로. 핵심어는 굵게, 외울 문장은 옅은 형광펜만
-  function sentenceEl(s, marks) {
-    const ranges = [];
-    for (const x of marks) if (x.m.p === s.p && x.loc.end > s.start && x.loc.start < s.end) ranges.push([Math.max(x.loc.start, s.start), Math.min(x.loc.end, s.end), x.m.kind]);
-    const cuts = [...new Set([s.start, s.end, ...ranges.flatMap(([a, z]) => [a, z])])].sort((a, b) => a - b);
-    const text = cur().d.blocks.find((b) => b.p === s.p).text;
-    const li = el("li", "sent");
-    for (let i = 0; i < cuts.length - 1; i++) {
-      const [a, z] = [cuts[i], cuts[i + 1]];
-      const on = ranges.filter(([ra, rz]) => ra <= a && z <= rz).map((r) => r[2]);
-      const piece = text.slice(a, z);
-      li.append(on.length ? el("span", on.map((k) => `k-${k}`).join(" "), piece) : document.createTextNode(piece));
-    }
-    li.title = "눌러서 본문의 그 자리로";
-    li.onclick = () => jumpTo(s.p, s.start, s.end);
-    return li;
-  }
-
   function renderSummary() {
     const side = $("side");
     const { tpl } = cur();
@@ -486,35 +412,12 @@ function startNotelayer() {
     const title = el("div", "sum-title");
     title.append(el("strong", null, "요약"), el("span", null, tpl.name));
     header.append(title, close);
-    // 탭: 개념(구조도) · 설명(글머리표)
-    const tabs = el("div", "sum-tabs");
-    for (const [id, label] of [["concepts", "개념"], ["explain", "설명"]]) {
-      const t = el("button", "sum-tab", label);
-      t.setAttribute("aria-selected", String(ui.sumTab === id));
-      t.onclick = () => { ui.sumTab = id; if (id !== "concepts") clearConcept(); renderSummary(); };
-      tabs.append(t);
-    }
     const body = el("div", "sum-body");
-    if (ui.sumTab === "concepts") renderConcepts(body); else renderExplain(body);
-    side.replaceChildren(header, tabs, body);
+    renderConcepts(body);
+    side.replaceChildren(header, body);
   }
 
-  // ── 설명 탭: 번호 묶음 아래 원문 문장 글머리표 ──
-  function renderExplain(body) {
-    const { sections, marks } = buildSummary();
-    if (!sections.length) { body.append(el("p", "empty", "핵심어나 외울 문장을 표시하면 여기에 구조화된 요약이 생깁니다.")); return; }
-    const list = el("ol", "sum-list");
-    for (const sec of sections) {
-      const li = el("li", "sum-sec");
-      const ul = el("ul");
-      for (const s of sec.items) ul.append(sentenceEl(s, marks));
-      li.append(el("h3", null, sec.title), ul);
-      list.append(li);
-    }
-    body.append(list, el("p", "sum-foot", "문장은 원문 그대로입니다. 누르면 본문의 그 자리로 갑니다."));
-  }
-
-  // ── 개념 탭: 개념 구조도 ──
+  // ── 개념 구조도 ──
   // 데이터: { topic, nodes: [{ id, term, role, parent, def: { p, quote }, match: [본문에서 찾을 낱말] }], links: [{ from, to, label }] }
   // 개념 이름·역할·관계는 LLM(또는 사람)이 정한 것이고, 정의 문장(def)만 원문 그대로다.
   function conceptData() {
@@ -546,7 +449,6 @@ function startNotelayer() {
     ui.concept = on ? id : null;
     ui.focus = on ? `concept:${id}` : null; // 본문에서 그 개념이 나오는 자리만 또렷하게
     paintMarks();
-    if (on) { const top = firstFocusedTop(); if (top != null && (top < 0 || top > innerHeight - 80)) scrollTo({ top: top + scrollY - innerHeight / 3, behavior: "smooth" }); }
   }
   // 본문에서 개념 낱말이 나오는 모든 자리
   function conceptRanges(id) {
@@ -597,7 +499,7 @@ function startNotelayer() {
     body.append(map);
     body.append(el("p", "sum-foot", c.source === "auto"
       ? "개념 관계 정보가 없어 핵심어만 나란히 두었습니다. \"AI 표시 만들기\"로 관계(하위·동등·해결 등)를 받을 수 있습니다."
-      : "개념 이름과 관계는 AI 가 정한 것이고, 정의 문장만 원문 그대로입니다. 개념을 누르면 본문에서 그 개념이 나오는 자리만 강조됩니다. 수정 모드에서 상위 개념과 역할을 바꿀 수 있습니다."));
+      : "개념 이름과 관계는 AI 가 정한 것이고, 정의 문장만 원문 그대로입니다. 개념을 누르면 본문에서 그 개념이 나오는 자리만 강조됩니다(화면은 움직이지 않습니다). 수정 모드에서 상위 개념과 역할을 바꿀 수 있습니다."));
   }
   function nodeEl(n, c) {
     const li = el("li");
@@ -622,8 +524,6 @@ function startNotelayer() {
       const s = loc && sentenceAt(n.def.p, loc.start);
       if (s) {
         const def = el("div", "cm-def", s.text);
-        def.title = "눌러서 본문의 그 자리로";
-        def.onclick = () => jumpTo(s.p, s.start, s.end);
         li.append(def);
       }
       if (ui.editing) li.append(conceptEditor(n));
@@ -653,20 +553,7 @@ function startNotelayer() {
     if (e.key === "Escape" && ui.focus && !document.querySelector("dialog[open]")) { ui.focus = null; ui.concept = null; paintMarks(); }
   });
 
-  // 본문의 그 자리로 화면을 옮기고 잠깐 반짝인다
-  let flashTimer = 0;
-  function jumpTo(p, start, end) {
-    const node = paraEl(p)?.firstChild;
-    if (!node) return;
-    const range = toRange({ node, start, end });
-    const r = range.getBoundingClientRect();
-    scrollTo({ top: r.top + scrollY - innerHeight / 3, behavior: "smooth" });
-    if (supportsHighlight) {
-      CSS.highlights.set("mk-flash", new Highlight(range));
-      clearTimeout(flashTimer);
-      flashTimer = setTimeout(() => CSS.highlights.delete("mk-flash"), 1600);
-    }
-  }
+
   // AI 가 단 표시는 "AI 표시" 층, 내가 달거나 고친 표시는 "내 표시·메모" 층에 속한다
   function visibleMarks(ann) {
     return ann.marks.filter((m) => (m.by === "me" ? ui.layers.mine : ui.layers.marks));
@@ -996,15 +883,6 @@ function startNotelayer() {
       if (typeof b.answer === "string" && b.answer.trim()) box.answer = b.answer.trim();
       boxes.push(box);
     }
-    let outline = null;
-    if (Array.isArray(result.outline)) {
-      outline = result.outline.map((sec) => ({
-        title: String(sec?.title ?? "").slice(0, 60),
-        items: (Array.isArray(sec?.items) ? sec.items : []).map((it) => ({ p: Number(it?.p), quote: typeof it?.quote === "string" ? it.quote : "" }))
-          .filter((it) => paras.has(it.p) && it.quote && paras.get(it.p).includes(it.quote)),
-      })).filter((sec) => sec.title && sec.items.length);
-    }
-    ann.outline = outline?.length ? outline : null;
     let concepts = null;
     const rc = result.concepts;
     if (rc && Array.isArray(rc.nodes)) {
@@ -1036,7 +914,7 @@ function startNotelayer() {
       saveUserDocs();
     }
     save(); render();
-    return { marks: marks.length, lost, boxes: boxes.length, translated, outline: ann.outline?.length ?? 0, concepts: ann.concepts?.nodes.length ?? 0 };
+    return { marks: marks.length, lost, boxes: boxes.length, translated, concepts: ann.concepts?.nodes.length ?? 0 };
   }
   window.NL = {
     addDocument, applyAnnotations,

@@ -123,56 +123,6 @@ window.NL_DOCS.push({
           "pre": "프레임 머리(9바이트, 4.1절)\n길이 24비트 | 종류 8비트 | 플래그 8비트 | 예약 1비트 + 스트림 번호 31비트"
         }
       ],
-      "outline": [
-        {
-          "title": "전제: HTTP 성능은 전송 계층에 달렸다",
-          "items": [
-            {
-              "p": 1,
-              "quote": "the underlying transport"
-            }
-          ]
-        },
-        {
-          "title": "HTTP/1.x 의 두 가지 문제",
-          "items": [
-            {
-              "p": 2,
-              "quote": "added request pipelining"
-            },
-            {
-              "p": 2,
-              "quote": "Therefore, HTTP/1.0 and HTTP/1.1 clients"
-            },
-            {
-              "p": 3,
-              "quote": "HTTP fields are often repetitive"
-            }
-          ]
-        },
-        {
-          "title": "HTTP/2 가 푸는 방법",
-          "items": [
-            {
-              "p": 4,
-              "quote": "it allows interleaving of messages"
-            },
-            {
-              "p": 6,
-              "quote": "binary message framing"
-            }
-          ]
-        },
-        {
-          "title": "남은 한계",
-          "items": [
-            {
-              "p": 5,
-              "quote": "TCP head-of-line blocking is not addressed"
-            }
-          ]
-        }
-      ],
       "concepts": {
         "topic": "HTTP/2 가 나온 이유",
         "nodes": [

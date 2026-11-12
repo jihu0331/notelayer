@@ -324,3 +324,7 @@ article .box.dim { opacity: .25; }
 .cmap .cm-edit label { display: grid; gap: 2px; }
 .cmap .cm-edit select, .cmap .cm-edit input { font: 13px var(--ui); border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px 6px; color: #1f2328; background: #fff; }
 ::highlight(mk-concept) { background-color: rgba(245, 158, 11, .28); }
+
+/* 요약 안의 문장·정의는 누르는 곳이 아니다(이동 기능 뺌) */
+.side .sum-sec .sent, .cmap .cm-def { cursor: default; }
+.side .sum-sec .sent:hover { background: transparent; color: #374151; }
