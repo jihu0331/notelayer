@@ -174,3 +174,37 @@
     .box .answer[hidden] { display: block !important; opacity: .7; }
     .box .reveal { display: none; }
   }
+
+/* ── 새 문서·AI 표시 만들기 창 ── */
+.bar .act.primary { background: #111827; color: #fff; border-color: #111827; }
+.dlg { width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 48px); border: 0; border-radius: 14px; padding: 0 18px 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.25); font: 14px/1.6 var(--ui); color: #1f2328; }
+.dlg::backdrop { background: rgba(17, 24, 39, .35); }
+.dlg-head { position: sticky; top: 0; display: flex; align-items: center; padding: 14px 0 10px; background: #fff; font-size: 16px; margin: 0; }
+.dlg-x { margin-left: auto; border: 0; background: transparent; font-size: 22px; line-height: 1; cursor: pointer; color: #6b7280; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid #e5e7eb; margin-bottom: 12px; }
+.tab { border: 0; background: transparent; padding: 8px 12px; cursor: pointer; font: inherit; color: #6b7280; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tab[aria-selected="true"] { color: #111827; border-bottom-color: #111827; font-weight: 600; }
+.field { display: block; margin-bottom: 10px; font-weight: 600; color: #374151; }
+.field input, .field select, .field textarea, .dlg textarea { display: block; width: 100%; margin-top: 4px; font: 400 14px/1.6 var(--ui);
+  border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 10px; background: #fff; color: #1f2328; }
+.field textarea, .dlg textarea { resize: vertical; }
+.dlg-foot, .dlg .row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.dlg-foot .act { margin-left: auto; }
+.dlg .act { border: 1px solid #d1d5db; background: #fff; padding: 7px 14px; border-radius: 8px; cursor: pointer; font: inherit; }
+.dlg .act.primary { background: #111827; color: #fff; border-color: #111827; }
+.dlg-msg { color: #6b7280; font-size: 13px; }
+.help { color: #4b5563; font-size: 13px; margin: 0 0 10px; }
+.drop { display: grid; place-items: center; height: 140px; border: 2px dashed #d1d5db; border-radius: 12px; color: #6b7280; cursor: pointer; text-align: center; padding: 0 16px; }
+.drop.over { border-color: #f59e0b; background: #fffbeb; }
+.drop input { display: none; }
+.bm-wrap { margin: 14px 0; }
+.bm { display: inline-block; padding: 8px 16px; border-radius: 999px; background: #f59e0b; color: #fff; font-weight: 600; text-decoration: none; cursor: grab; }
+.steps { padding-left: 20px; margin: 0 0 8px; }
+.steps li { margin-bottom: 14px; }
+.steps details { margin-top: 6px; }
+.steps summary { cursor: pointer; color: #6b7280; font-size: 13px; }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); z-index: 60; max-width: min(640px, calc(100vw - 32px));
+  background: #111827; color: #fff; padding: 10px 16px; border-radius: 10px; font: 14px/1.5 var(--ui); opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+@media print { .toast, .dlg { display: none !important; } }

@@ -9,6 +9,16 @@ function startNotelayer() {
   const $ = (id) => document.getElementById(id);
   const article = $("doc");
 
+  // 사용자가 화면에서 넣은 문서는 예시 문서와 따로 이 브라우저에 저장한다
+  const USER_STORE = "notelayer-userdocs-v1";
+  const userDocIds = new Set();
+  try {
+    for (const d of JSON.parse(localStorage.getItem(USER_STORE)) ?? []) {
+      if (d?.id && Array.isArray(d.blocks) && !DOCS.some((x) => x.id === d.id)) { DOCS.push(d); userDocIds.add(d.id); }
+    }
+  } catch {}
+  function saveUserDocs() { try { localStorage.setItem(USER_STORE, JSON.stringify(DOCS.filter((d) => userDocIds.has(d.id)))); } catch {} }
+
   let uidSeq = 0;
   const uid = () => `x${Date.now().toString(36)}${(uidSeq++).toString(36)}`;
   const withIds = (list) => (list ?? []).map((x) => ({ id: uid(), ...structuredClone(x) }));
@@ -38,6 +48,7 @@ function startNotelayer() {
   const cur = () => {
     const d = docById(ui.doc);
     const st = state[d.id];
+    st.ann[ui.tpl] ??= { marks: [], boxes: [] }; // 새로 넣은 문서는 템플릿마다 빈 층으로 시작한다
     return { d, tpl: TEMPLATES[ui.tpl], st, ann: st.ann[ui.tpl] };
   };
 
@@ -210,6 +221,7 @@ function startNotelayer() {
 
     // 막대 상태
     $("docSelect").value = d.id;
+    $("deleteDocBtn").hidden = !userDocIds.has(d.id);
     document.querySelectorAll("#templateButtons button").forEach((b) => {
       b.setAttribute("aria-pressed", String(b.dataset.id === ui.tpl));
       b.disabled = !d.templates.includes(b.dataset.id);
@@ -617,7 +629,21 @@ function startNotelayer() {
   function clearSel() { getSelection().removeAllRanges(); hideSelMenu(); }
 
   // ── 막대 ──
-  for (const d of DOCS) { const o = el("option", null, d.title); o.value = d.id; $("docSelect").append(o); }
+  // 문서 고르기: 예시 문서와 내가 넣은 문서를 나눠 보여 준다
+  function fillDocSelect() {
+    const sel = $("docSelect");
+    sel.replaceChildren();
+    const mine = DOCS.filter((d) => userDocIds.has(d.id));
+    const groups = [["예시 문서", DOCS.filter((d) => !userDocIds.has(d.id))], ["내 문서", mine]];
+    for (const [label, list] of groups) {
+      if (!list.length) continue;
+      const g = el("optgroup"); g.label = label;
+      for (const d of list) { const o = el("option", null, d.title); o.value = d.id; g.append(o); }
+      sel.append(g);
+    }
+    sel.value = ui.doc;
+  }
+  fillDocSelect();
   $("docSelect").onchange = (e) => {
     ui.doc = e.target.value;
     const d = docById(ui.doc);
@@ -649,7 +675,8 @@ function startNotelayer() {
 
   // ── 내보내기·불러오기: 고친 표시·설명·메모는 브라우저에만 저장되므로 파일로 백업한다 ──
   $("exportBtn").onclick = () => {
-    const blob = new Blob([JSON.stringify({ app: "notelayer", version: 1, savedAt: new Date().toISOString(), state }, null, 2)], { type: "application/json" });
+    const userDocs = DOCS.filter((d) => userDocIds.has(d.id));
+    const blob = new Blob([JSON.stringify({ app: "notelayer", version: 1, savedAt: new Date().toISOString(), state, userDocs }, null, 2)], { type: "application/json" });
     const a = el("a"); a.href = URL.createObjectURL(blob); a.download = `notelayer-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
@@ -660,12 +687,76 @@ function startNotelayer() {
     try {
       const data = JSON.parse(await file.text());
       if (data.app !== "notelayer" || !data.state) throw new Error("notelayer 백업 파일이 아닙니다");
+      for (const d of data.userDocs ?? []) {
+        if (!d?.id || !Array.isArray(d.blocks) || DOCS.some((x) => x.id === d.id)) continue;
+        DOCS.push(d); userDocIds.add(d.id); state[d.id] = freshDocState(d);
+      }
       for (const [id, s] of Object.entries(data.state)) if (state[id] && s?.ann) state[id] = s;
-      save(); render();
+      saveUserDocs(); save(); fillDocSelect(); render();
     } catch (err) { alert(`불러오지 못했습니다: ${err.message}`); }
   };
 
+  // ── 내가 넣은 문서 지우기 (예시 문서는 지울 수 없다) ──
+  $("deleteDocBtn").onclick = () => {
+    const d = docById(ui.doc);
+    if (!userDocIds.has(d.id) || !confirm(`「${d.title}」 문서와 그 위의 표시·메모를 지울까요?`)) return;
+    DOCS.splice(DOCS.indexOf(d), 1); userDocIds.delete(d.id); delete state[d.id];
+    ui.doc = DOCS[0].id; ui.tpl = DOCS[0].templates[0];
+    saveUserDocs(); save(); fillDocSelect(); render();
+  };
+
+  // ── 바깥(import.js)에서 쓰는 창구: 새 문서 넣기, LLM 이 만든 표시·설명 얹기 ──
+  function addDocument({ title, lang, source, paragraphs, translations }) {
+    const blocks = paragraphs.map((text, i) => ({ p: i + 1, text, ...(translations?.[i] ? { tr: translations[i] } : {}) }));
+    if (!blocks.length) throw new Error("본문이 비어 있습니다");
+    const doc = { id: `my-${uid()}`, title: title || "제목 없는 문서", lang: lang || "ko", source: source || "내가 넣은 문서",
+      templates: Object.keys(TEMPLATES), blocks, memos: [], annotations: {} };
+    DOCS.push(doc); userDocIds.add(doc.id); state[doc.id] = freshDocState(doc);
+    ui.doc = doc.id;
+    saveUserDocs(); save(); fillDocSelect(); render();
+    return doc;
+  }
+  // LLM 답을 지금 문서·템플릿에 얹는다. 내가 단 표시와 사람이 쓴 설명은 남기고 AI 것만 바꾼다
+  function applyAnnotations(result) {
+    const { d, tpl, ann } = cur();
+    const paras = new Map(d.blocks.map((b) => [b.p, b.text]));
+    const marks = [], lost = [];
+    for (const m of Array.isArray(result.marks) ? result.marks : []) {
+      const p = Number(m?.p), quote = typeof m?.quote === "string" ? m.quote : "";
+      if (!paras.has(p) || !["circle", "highlight", "wave"].includes(m.kind) || !quote) continue;
+      if (!paras.get(p).includes(quote)) { lost.push(quote); continue; }
+      marks.push({ id: uid(), p, kind: m.kind, quote });
+    }
+    const labels = Object.keys(tpl.boxes);
+    const boxes = [];
+    for (const b of Array.isArray(result.boxes) ? result.boxes : []) {
+      const p = Number(b?.p);
+      if (!paras.has(p) || typeof b?.text !== "string" || !b.text.trim()) continue;
+      const box = { id: uid(), p, label: labels.includes(b.label) ? b.label : labels[0], text: b.text.trim() };
+      if (typeof b.pre === "string" && b.pre.trim()) box.pre = b.pre;
+      if (typeof b.answer === "string" && b.answer.trim()) box.answer = b.answer.trim();
+      boxes.push(box);
+    }
+    ann.marks = [...ann.marks.filter((m) => m.by === "me"), ...marks];
+    ann.boxes = [...ann.boxes.filter((b) => b.by && b.by !== "ai"), ...boxes];
+    let translated = 0;
+    if (userDocIds.has(d.id) && Array.isArray(result.translations)) {
+      for (const t of result.translations) {
+        const b = d.blocks.find((x) => x.p === Number(t?.p));
+        if (b && typeof t.text === "string" && t.text.trim()) { b.tr = t.text.trim(); translated++; }
+      }
+      saveUserDocs();
+    }
+    save(); render();
+    return { marks: marks.length, lost, boxes: boxes.length, translated };
+  }
+  window.NL = {
+    addDocument, applyAnnotations,
+    current: () => { const { d, tpl, ann } = cur(); return { doc: d, templateId: ui.tpl, template: tpl, aiMarks: ann.marks.filter((m) => m.by !== "me").length, isUserDoc: userDocIds.has(d.id) }; },
+  };
+
   render();
+  window.dispatchEvent(new Event("notelayer-ready"));
 }
 
 // 문서 파일들을 차례로 읽은 다음 시작한다. 스크립트 태그로 읽으므로 파일을 바로 열어도(file://) 동작한다.
