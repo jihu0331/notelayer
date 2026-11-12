@@ -208,3 +208,30 @@
   background: #111827; color: #fff; padding: 10px 16px; border-radius: 10px; font: 14px/1.5 var(--ui); opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 @media print { .toast, .dlg { display: none !important; } }
+
+/* ── 오른쪽 요약: 원문 문장 그대로, 묶음과 순서만 이해하기 쉽게 ── */
+.legend .sum-open { font-weight: 600; border-color: var(--line); }
+.side { width: min(400px, 100vw); }
+@media (min-width: 1180px) { body.side-open main, body.side-open .explain { margin-right: 416px; } }
+.side .chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 10px 14px 4px; }
+.side .chip { border: 1px solid #e5e7eb; background: #fff; border-radius: 999px; padding: 2px 10px; font: 12px var(--ui); color: #374151; cursor: pointer; }
+.side .chip[aria-pressed="true"] { background: #111827; color: #fff; border-color: #111827; }
+.side .sum-note { padding: 2px 14px 8px; color: #9ca3af; font-size: 12px; }
+.side .sum-body { padding: 0 14px 40px; }
+.side .sum-sec { margin-top: 14px; transition: opacity .2s; }
+.side .sum-sec h3 { margin: 0 0 6px; font-size: 14px; color: #111827; padding-bottom: 4px; border-bottom: 1px solid #f0f0f0; }
+.side .item-wrap { margin: 0 0 8px; transition: opacity .2s; }
+.side .sent { font: 15px/1.85 var(--body-font); color: #1f2328; cursor: pointer; border-radius: 6px; padding: 2px 4px; margin: 0 -4px; }
+.side .sent:hover { background: #f9fafb; }
+.side .k-highlight { background: var(--hl); border-radius: 2px; }
+.side .k-wave { text-decoration: underline wavy var(--wave); text-decoration-thickness: 1.5px; text-underline-offset: 4px; }
+.side .k-circle { box-shadow: inset 0 0 0 1.6px var(--circle); border-radius: 999px; padding: 0 3px; }
+.side .k-mine { text-decoration: underline dotted var(--mine); text-decoration-thickness: 2px; text-underline-offset: 5px; }
+.side .k-circle.k-wave, .side .k-circle.k-mine { text-decoration-skip-ink: none; }
+.side .sum-memo, .side .sum-box { margin: 2px 0 0 10px; padding: 2px 8px; font-size: 13px; line-height: 1.6; color: #4b5563; cursor: pointer; border-left: 2px solid var(--c, var(--mine)); transition: opacity .2s; }
+.side .sum-memo { font-family: var(--note-font); color: var(--mine); }
+.side .sum-box .tag { font: 600 11px var(--ui); color: #fff; background: var(--c); border-radius: 999px; padding: 0 7px; }
+.side .dim { opacity: .28; }
+.side .sum-body[data-focus="circle"] .item-wrap:not(.dim) .k-circle,
+.side .sum-body[data-focus="highlight"] .item-wrap:not(.dim) .k-highlight,
+.side .sum-body[data-focus="wave"] .item-wrap:not(.dim) .k-wave { font-weight: 600; }

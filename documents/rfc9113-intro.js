@@ -122,6 +122,56 @@ window.NL_DOCS.push({
           "text": "HTTP/1.1 은 사람이 읽는 글자로 메시지를 주고받았지만, HTTP/2 는 길이·종류·스트림 번호가 정해진 자리에 들어간 이진 프레임으로 나눠 보낸다. 기계가 경계를 바로 알 수 있어 처리가 빠르다.",
           "pre": "프레임 머리(9바이트, 4.1절)\n길이 24비트 | 종류 8비트 | 플래그 8비트 | 예약 1비트 + 스트림 번호 31비트"
         }
+      ],
+      "outline": [
+        {
+          "title": "전제: HTTP 성능은 전송 계층에 달렸다",
+          "items": [
+            {
+              "p": 1,
+              "quote": "the underlying transport"
+            }
+          ]
+        },
+        {
+          "title": "HTTP/1.x 의 두 가지 문제",
+          "items": [
+            {
+              "p": 2,
+              "quote": "added request pipelining"
+            },
+            {
+              "p": 2,
+              "quote": "Therefore, HTTP/1.0 and HTTP/1.1 clients"
+            },
+            {
+              "p": 3,
+              "quote": "HTTP fields are often repetitive"
+            }
+          ]
+        },
+        {
+          "title": "HTTP/2 가 푸는 방법",
+          "items": [
+            {
+              "p": 4,
+              "quote": "it allows interleaving of messages"
+            },
+            {
+              "p": 6,
+              "quote": "binary message framing"
+            }
+          ]
+        },
+        {
+          "title": "남은 한계",
+          "items": [
+            {
+              "p": 5,
+              "quote": "TCP head-of-line blocking is not addressed"
+            }
+          ]
+        }
       ]
     }
   }

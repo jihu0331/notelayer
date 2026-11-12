@@ -26,7 +26,7 @@ function startNotelayer() {
   // 문서별 상태: 템플릿별 표시·설명(고친 내용 포함)과 내 메모. 이 브라우저에만 저장한다
   function freshDocState(d) {
     const ann = {};
-    for (const [t, a] of Object.entries(d.annotations)) ann[t] = { marks: withIds(a.marks), boxes: withIds(a.boxes) };
+    for (const [t, a] of Object.entries(d.annotations)) ann[t] = { marks: withIds(a.marks), boxes: withIds(a.boxes), outline: a.outline ? structuredClone(a.outline) : null };
     return { ann, memos: withIds(d.memos) };
   }
   function loadState() {
@@ -39,7 +39,7 @@ function startNotelayer() {
   function save() { try { localStorage.setItem(STORE, JSON.stringify(state)); } catch {} }
 
   const state = loadState();
-  const ui = { doc: DOCS[0].id, tpl: DOCS[0].templates[0], editing: false, side: null, layers: { marks: true, boxes: true, mine: true, tr: true } };
+  const ui = { doc: DOCS[0].id, tpl: DOCS[0].templates[0], editing: false, summary: false, focus: null, layers: { marks: true, boxes: true, mine: true, tr: true } };
   let focusId = null;           // 새로 단 메모: 그려진 뒤 바로 입력칸에 커서를 둔다
   const openIds = new Set();    // 펼쳐 둔 상자
   let circleRanges = [];
@@ -237,13 +237,17 @@ function startNotelayer() {
     $("meta").textContent = `원문: ${d.source} · 원문은 고치지 않고 그 위에 층만 얹는다`;
     const legend = $("legend");
     legend.replaceChildren(el("div", "reader", `${tpl.name} · 읽는 사람: ${tpl.reader} · ${tpl.rules.join(" · ")}`));
+    const sumBtn = el("button", "k sum-open", "요약 보기");
+    sumBtn.title = "표시한 문장을 모은 요약을 오른쪽에 열기";
+    sumBtn.onclick = () => { ui.summary = !ui.summary; ui.focus = null; renderSummary(); };
+    legend.append(sumBtn);
     for (const [kind, cls, name] of [["circle", "sw-circle", tpl.marks.circle], ["highlight", "sw-hl", tpl.marks.highlight],
       ["wave", "sw-wave", tpl.marks.wave], ["mine", "sw-mine", "내 메모"]]) {
       const k = el("button", "k");
       k.dataset.kind = kind;
-      k.title = "눌러서 이 종류만 오른쪽에 모아 보기";
+      k.title = "요약에서 이 종류만 또렷하게 보기";
       k.append(el("span", cls), el("span", null, name), el("span", "count"));
-      k.onclick = () => { ui.side = ui.side === kind ? null : kind; renderSide(); };
+      k.onclick = () => focusKind(kind);
       legend.append(k);
     }
     // 설명 상자 종류도 같은 방식으로 모아 본다
@@ -252,14 +256,13 @@ function startNotelayer() {
     for (const [label, color] of Object.entries(tpl.boxes)) {
       const k = el("button", "k");
       k.dataset.kind = `box:${label}`;
-      k.title = "눌러서 이 설명만 오른쪽에 모아 보기";
+      k.title = "요약에서 이 설명만 또렷하게 보기";
       const dot = el("span", "dot"); dot.style.background = color;
       k.append(dot, el("span", null, label), el("span", "count"));
-      k.onclick = () => { ui.side = ui.side === k.dataset.kind ? null : k.dataset.kind; renderSide(); };
+      k.onclick = () => focusKind(k.dataset.kind);
       boxRow.append(k);
     }
     legend.append(boxRow);
-    if (ui.side?.startsWith("box:") && !tpl.boxes[ui.side.slice(4)]) ui.side = null; // 템플릿을 바꿔 없는 종류면 닫는다
     if (hasTr) legend.append(el("span", "k", "번역: 영어 → 한국어 (문단 아래)"));
 
     // 본문: 원문 → 번역 → 설명 상자 → 내 메모 순서로 문단마다 쌓는다
@@ -321,96 +324,229 @@ function startNotelayer() {
     $("orphans").textContent = (orphans.length ? `원래 자리를 못 찾은 표시: ${orphans.join(", ")}` : "")
       + (supportsHighlight ? "" : " 이 브라우저는 형광펜 기능을 지원하지 않아 동그라미만 보입니다.");
     queueDraw();
-    renderSide();
+    renderSummary();
   }
 
-  // ── 오른쪽 모아 보기: 범례에서 고른 종류의 표시를 문서 순서대로 나열하고, 누르면 그 자리로 간다 ──
-  function sideItems(kind) {
+  // ── 오른쪽 요약: 표시가 걸린 문장을 원문 그대로 모으되, 묶음과 순서는 이해하기 쉽게 짠다 ──
+  // 요약 구조(outline: 묶음 제목 + 들어갈 문장)가 있으면 그 순서를 따르고,
+  // 없으면 핵심어마다 묶음을 만들어 그 핵심어가 나오는 문장을 모은다. 문장 글자는 늘 원문 그대로다.
+  function countKind(kind) {
     const { st, ann } = cur();
-    if (kind.startsWith("box:")) {
-      if (!ui.layers.boxes) return [];
-      const label = kind.slice(4);
-      return ann.boxes.filter((b) => b.label === label).map((b) => ({ src: b, box: true })).sort((a, b) => a.src.p - b.src.p);
-    }
-    const list = kind === "mine"
-      ? st.memos.map((m) => ({ src: m, memo: true }))
-      : visibleMarks(ann).filter((m) => m.kind === kind).map((m) => ({ src: m, memo: false }));
-    for (const it of list) it.loc = locate(it.src.p, it.src.quote, it.src.at);
-    return list.sort((a, b) => a.src.p - b.src.p || (a.loc?.start ?? 0) - (b.loc?.start ?? 0));
+    if (kind.startsWith("box:")) return ui.layers.boxes ? ann.boxes.filter((b) => b.label === kind.slice(4)).length : 0;
+    if (kind === "mine") return ui.layers.mine ? st.memos.length : 0;
+    return visibleMarks(ann).filter((m) => m.kind === kind).length;
   }
-  let activeSideId = null;
-  function renderSide() {
-    const side = $("side");
-    const { tpl } = cur();
-    // 범례 숫자는 늘 갱신한다
-    for (const k of document.querySelectorAll(".legend button.k")) {
-      k.querySelector(".count").textContent = String(sideItems(k.dataset.kind).length);
-      k.setAttribute("aria-pressed", String(ui.side === k.dataset.kind));
+  function focusKind(kind) {
+    if (!ui.summary) { ui.summary = true; ui.focus = kind; }
+    else ui.focus = ui.focus === kind ? null : kind;
+    renderSummary();
+  }
+  // 문장 나누기: 마침표·물음표·느낌표 뒤에 빈칸이 오거나 문단이 끝나는 곳. "HTTP/1.1" 처럼 뒤에 글자가 붙은 점은 넘긴다
+  function sentencesOf(text) {
+    const out = [];
+    let start = 0;
+    for (let i = 0; i < text.length; i++) {
+      if (!/[.!?。]/.test(text[i])) continue;
+      let j = i + 1;
+      while (j < text.length && /["'”’)\]]/.test(text[j])) j++;
+      if (j < text.length && !/\s/.test(text[j])) continue;
+      out.push([start, j]);
+      while (j < text.length && /\s/.test(text[j])) j++;
+      start = j; i = j - 1;
     }
-    document.body.classList.toggle("side-open", !!ui.side);
-    if (!ui.side) { side.hidden = true; return; }
+    if (start < text.length && text.slice(start).trim()) out.push([start, text.length]);
+    return out;
+  }
+  function sentenceAt(p, offset) {
+    const b = cur().d.blocks.find((x) => x.p === p);
+    if (!b) return null;
+    const s = sentencesOf(b.text).find(([a, z]) => offset >= a && offset < z);
+    return s ? { p, start: s[0], end: s[1], key: `${p}:${s[0]}`, text: b.text.slice(s[0], s[1]) } : null;
+  }
+  const byDoc = (a, b) => a.p - b.p || a.start - b.start;
+
+  function buildSummary() {
+    const { d, st, ann } = cur();
+    const marks = visibleMarks(ann).map((m) => ({ m, loc: locate(m.p, m.quote, m.at) })).filter((x) => x.loc);
+    const memos = ui.layers.mine ? st.memos.map((m) => ({ m, loc: locate(m.p, m.quote, m.at) })).filter((x) => x.loc) : [];
+    const used = new Set();
+    const take = (s) => { if (!s || used.has(s.key)) return null; used.add(s.key); return s; };
+    const candidates = [];
+    for (const x of [...marks, ...memos]) {
+      const s = sentenceAt(x.m.p, x.loc.start);
+      if (s && !candidates.some((c) => c.key === s.key)) candidates.push(s);
+    }
+    candidates.sort(byDoc);
+    const sections = [];
+    const outline = ann.outline ?? d.annotations?.[ui.tpl]?.outline;
+    if (Array.isArray(outline) && outline.length) {
+      for (const sec of outline) {
+        const items = [];
+        for (const it of sec.items ?? []) {
+          const loc = locate(it.p, it.quote);
+          const s = loc && take(sentenceAt(it.p, loc.start));
+          if (s) items.push(s);
+        }
+        if (items.length) sections.push({ title: sec.title, items });
+      }
+      const rest = candidates.filter((s) => !used.has(s.key)).map(take);
+      if (rest.length) sections.push({ title: "그 밖에 짚은 곳", items: rest });
+      return { sections, marks, memos, source: "outline" };
+    }
+    // 구조가 없을 때: 핵심어(동그라미)가 처음 나오는 순서대로 묶음을 만든다.
+    // 먼저 핵심어마다 자기 동그라미가 있는 문장을 배정하고, 남은 문장은 처음 언급한 핵심어 묶음에 넣는다
+    const seen = new Set();
+    const groups = [];
+    const keywords = marks.filter((x) => x.m.kind === "circle").sort((a, b) => a.m.p - b.m.p || a.loc.start - b.loc.start);
+    for (const k of keywords) {
+      const word = k.m.quote.toLowerCase();
+      if (seen.has(word)) continue;
+      seen.add(word);
+      const own = take(sentenceAt(k.m.p, k.loc.start));
+      groups.push({ title: k.m.quote, word, items: own ? [own] : [] });
+    }
+    for (const s of candidates) {
+      if (used.has(s.key)) continue;
+      const g = groups.find((x) => s.text.toLowerCase().includes(x.word));
+      if (g) g.items.push(take(s));
+    }
+    for (const g of groups) if (g.items.length) sections.push({ title: g.title, items: g.items.sort(byDoc) });
+    const rest = candidates.filter((s) => !used.has(s.key)).map(take);
+    if (rest.length) sections.push({ title: sections.length ? "그 밖에 짚은 곳" : "짚은 곳", items: rest });
+    return { sections, marks, memos, source: "auto" };
+  }
+
+  // 요약 안의 문장: 원문 글자 그대로, 그 위에 같은 모양의 표시를 다시 입힌다
+  function sentenceEl(s, marks, memos) {
+    const ranges = [];
+    for (const x of marks) if (x.m.p === s.p && x.loc.end > s.start && x.loc.start < s.end) ranges.push([Math.max(x.loc.start, s.start), Math.min(x.loc.end, s.end), x.m.kind]);
+    for (const x of memos) if (x.m.p === s.p && x.loc.end > s.start && x.loc.start < s.end) ranges.push([Math.max(x.loc.start, s.start), Math.min(x.loc.end, s.end), "mine"]);
+    const cuts = [...new Set([s.start, s.end, ...ranges.flatMap(([a, z]) => [a, z])])].sort((a, b) => a - b);
+    const text = cur().d.blocks.find((b) => b.p === s.p).text;
+    const node = el("div", "sent");
+    const kinds = new Set();
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const [a, z] = [cuts[i], cuts[i + 1]];
+      const on = ranges.filter(([ra, rz]) => ra <= a && z <= rz).map((r) => r[2]);
+      const piece = text.slice(a, z);
+      if (!on.length) { node.append(document.createTextNode(piece)); continue; }
+      on.forEach((k) => kinds.add(k));
+      node.append(el("span", on.map((k) => `k-${k}`).join(" "), piece));
+    }
+    node.dataset.kinds = [...kinds].join("|"); // 설명 이름에 빈칸이 있어 | 로 나눈다
+    node.title = `문단 ${s.p} · 눌러서 본문의 그 자리로`;
+    node.onclick = () => jumpTo(s.p, s.start, s.end);
+    return node;
+  }
+
+  function renderSummary() {
+    const side = $("side");
+    const { tpl, ann } = cur();
+    if (ui.focus?.startsWith("box:") && !tpl.boxes[ui.focus.slice(4)]) ui.focus = null; // 템플릿을 바꿔 없는 종류면 푼다
+    for (const k of document.querySelectorAll(".legend button.k[data-kind]")) {
+      k.querySelector(".count").textContent = String(countKind(k.dataset.kind));
+      k.setAttribute("aria-pressed", String(ui.summary && ui.focus === k.dataset.kind));
+    }
+    const openBtn = document.querySelector(".legend .sum-open");
+    if (openBtn) openBtn.setAttribute("aria-pressed", String(ui.summary));
+    document.body.classList.toggle("side-open", ui.summary);
+    if (!ui.summary) { side.hidden = true; return; }
     side.hidden = false;
-    const isBox = ui.side.startsWith("box:");
-    const name = isBox ? `설명 · ${ui.side.slice(4)}` : ui.side === "mine" ? "내 메모" : `${SHAPE[ui.side]} ${tpl.marks[ui.side]}`;
-    const items = sideItems(ui.side);
+
+    const { sections, marks, memos, source } = buildSummary();
     const header = el("header");
     const close = el("button", "close", "×");
     close.title = "닫기";
-    close.onclick = () => { ui.side = null; renderSide(); };
-    header.append(el("span", null, `${name} · ${items.length}개`), close);
-    const body = el("div");
-    if (!items.length) body.append(el("div", "empty", isBox && !ui.layers.boxes ? "AI 설명 층이 꺼져 있습니다." : "이 문서에는 아직 없습니다."));
-    for (const it of items.filter((x) => x.box)) {
-      const b = el("button", `item${activeSideId === it.src.id ? " active" : ""}`);
-      b.append(el("div", "quote", it.src.text));
-      if (it.src.answer) b.append(el("div", "ctx", "답은 본문에서 펼쳐 확인"));
-      b.append(el("div", "meta", `문단 ${it.src.p} · ${whoText(it.src, "ai")}`));
-      b.onclick = () => goTo(it);
-      body.append(b);
+    close.onclick = () => { ui.summary = false; ui.focus = null; renderSummary(); };
+    header.append(el("span", null, `요약 · ${tpl.name}`), close);
+
+    // 고르면 그 종류가 든 문장만 또렷하게, 나머지는 흐리게
+    const chips = el("div", "chips");
+    const chipDefs = [[null, "전체"], ["circle", `${SHAPE.circle} ${tpl.marks.circle}`], ["highlight", `${SHAPE.highlight} ${tpl.marks.highlight}`],
+      ["wave", `${SHAPE.wave} ${tpl.marks.wave}`], ["mine", "내 메모"], ...Object.keys(tpl.boxes).map((l) => [`box:${l}`, l])];
+    for (const [kind, label] of chipDefs) {
+      const c = el("button", "chip", label);
+      c.setAttribute("aria-pressed", String(ui.focus === kind));
+      c.onclick = () => { ui.focus = kind; renderSummary(); };
+      chips.append(c);
     }
-    for (const it of items.filter((x) => !x.box)) {
-      const b = el("button", `item${it.loc ? "" : " lost"}${activeSideId === it.src.id ? " active" : ""}`);
-      b.append(el("div", "quote", `“${it.src.quote}”`));
-      if (it.loc) {
-        const t = it.loc.node.data;
-        const ctx = el("div", "ctx");
-        const a = Math.max(0, it.loc.start - 18), z = Math.min(t.length, it.loc.end + 18);
-        ctx.append(document.createTextNode(`${a > 0 ? "…" : ""}${t.slice(a, it.loc.start)}`), el("mark", null, t.slice(it.loc.start, it.loc.end)),
-          document.createTextNode(`${t.slice(it.loc.end, z)}${z < t.length ? "…" : ""}`));
-        b.append(ctx);
+    const note = el("div", "sum-note", source === "outline"
+      ? "문장은 원문 그대로이고, 묶음과 순서는 요약 구조를 따릅니다. 문장을 누르면 본문의 그 자리로 갑니다."
+      : "문장은 원문 그대로이고, 핵심어가 처음 나오는 순서로 묶었습니다. 문장을 누르면 본문의 그 자리로 갑니다.");
+
+    const body = el("div", "sum-body");
+    if (!sections.length) body.append(el("div", "empty", "아직 표시가 없습니다. 수정 모드에서 표시하거나 \"AI 표시 만들기\"를 써 보세요."));
+    const firstItemOfPara = new Map();
+    for (const sec of sections) {
+      const box = el("section", "sum-sec");
+      box.append(el("h3", null, sec.title));
+      for (const s of sec.items) {
+        const wrap = el("div", "item-wrap");
+        wrap.append(sentenceEl(s, marks, memos));
+        for (const x of memos) {
+          if (x.m.p !== s.p || x.loc.start < s.start || x.loc.start >= s.end) continue;
+          const n = el("div", "sum-memo", `나: ${x.m.text || "(빈 메모)"}`);
+          n.dataset.kinds = "mine";
+          n.onclick = () => jumpToBox(x.m.id);
+          wrap.append(n);
+        }
+        if (!firstItemOfPara.has(s.p)) firstItemOfPara.set(s.p, wrap);
+        box.append(wrap);
       }
-      const meta = it.memo ? it.src.text || "(빈 메모)" : `${it.src.by === "me" ? "내가 단 표시" : "AI 표시"}`;
-      b.append(el("div", "meta", `문단 ${it.src.p} · ${it.loc ? meta : "원래 자리를 못 찾음"}`));
-      if (it.loc) b.onclick = () => goTo(it);
-      body.append(b);
+      body.append(box);
     }
-    side.replaceChildren(header, body);
+    // 설명 상자의 첫 줄은 같은 문단에서 처음 요약에 든 문장 아래에 붙인다. 문단이 요약에 없으면 끝에 모은다
+    const leftover = [];
+    if (ui.layers.boxes) {
+      for (const b of ann.boxes) {
+        const n = el("div", "sum-box");
+        n.style.setProperty("--c", tpl.boxes[b.label] ?? "#6b7280");
+        n.append(el("span", "tag", b.label), document.createTextNode(` ${b.text}`));
+        n.dataset.kinds = `box:${b.label}`;
+        n.onclick = () => jumpToBox(b.id);
+        const host = firstItemOfPara.get(b.p);
+        if (host) host.append(n); else leftover.push(n);
+      }
+    }
+    if (leftover.length) { const sec = el("section", "sum-sec"); sec.append(el("h3", null, "그 밖의 설명"), ...leftover); body.append(sec); }
+
+    // 흐리게 하기
+    if (ui.focus) {
+      for (const w of body.querySelectorAll(".item-wrap")) {
+        const has = [...w.querySelectorAll("[data-kinds]")].some((n) => n.dataset.kinds.split("|").includes(ui.focus));
+        w.classList.toggle("dim", !has);
+        for (const n of w.querySelectorAll(".sum-memo, .sum-box")) n.classList.toggle("dim", !n.dataset.kinds.split("|").includes(ui.focus));
+      }
+      for (const n of body.querySelectorAll(":scope > .sum-sec > .sum-box")) n.classList.toggle("dim", n.dataset.kinds !== ui.focus);
+      body.dataset.focus = ui.focus;
+    }
+    for (const sec of body.querySelectorAll(".sum-sec")) {
+      if (ui.focus && !sec.querySelector(".item-wrap:not(.dim), :scope > .sum-box:not(.dim)")) sec.classList.add("dim");
+    }
+    side.replaceChildren(header, chips, note, body);
   }
-  // 그 자리로 화면을 옮기고 잠깐 반짝인다. 수정 모드에서는 바로 고칠 수 있게 표시 창도 연다
+
+  // 본문의 그 자리로 화면을 옮기고 잠깐 반짝인다
   let flashTimer = 0;
-  function goTo(it) {
-    activeSideId = it.src.id;
-    if (it.box) {
-      // 설명 상자는 펼친 다음 그 상자로 옮겨 테두리를 잠깐 반짝인다
-      const box = article.querySelector(`.box[data-id="${it.src.id}"]`);
-      if (!box) return;
-      box.open = true; openIds.add(it.src.id);
-      const r = box.getBoundingClientRect();
-      scrollTo({ top: r.top + scrollY - innerHeight / 3, behavior: "smooth" });
-      box.classList.remove("flash"); void box.offsetWidth; box.classList.add("flash");
-      renderSide();
-      return;
-    }
-    const range = toRange(it.loc);
-    const target = it.memo ? article.querySelector(`.box[data-id="${it.src.id}"]`) ?? range : range;
-    const r = target.getBoundingClientRect();
+  function jumpTo(p, start, end) {
+    const node = paraEl(p)?.firstChild;
+    if (!node) return;
+    const range = toRange({ node, start, end });
+    const r = range.getBoundingClientRect();
     scrollTo({ top: r.top + scrollY - innerHeight / 3, behavior: "smooth" });
     if (supportsHighlight) {
       CSS.highlights.set("mk-flash", new Highlight(range));
       clearTimeout(flashTimer);
       flashTimer = setTimeout(() => CSS.highlights.delete("mk-flash"), 1600);
     }
-    if (!it.memo && ui.editing) openPop(it.src); else renderSide();
+  }
+  function jumpToBox(id) {
+    const box = article.querySelector(`.box[data-id="${id}"]`);
+    if (!box) return;
+    box.open = true; openIds.add(id);
+    const r = box.getBoundingClientRect();
+    scrollTo({ top: r.top + scrollY - innerHeight / 3, behavior: "smooth" });
+    box.classList.remove("flash"); void box.offsetWidth; box.classList.add("flash");
   }
   // AI 가 단 표시는 "AI 표시" 층, 내가 달거나 고친 표시는 "내 표시·메모" 층에 속한다
   function visibleMarks(ann) {
@@ -737,6 +873,15 @@ function startNotelayer() {
       if (typeof b.answer === "string" && b.answer.trim()) box.answer = b.answer.trim();
       boxes.push(box);
     }
+    let outline = null;
+    if (Array.isArray(result.outline)) {
+      outline = result.outline.map((sec) => ({
+        title: String(sec?.title ?? "").slice(0, 60),
+        items: (Array.isArray(sec?.items) ? sec.items : []).map((it) => ({ p: Number(it?.p), quote: typeof it?.quote === "string" ? it.quote : "" }))
+          .filter((it) => paras.has(it.p) && it.quote && paras.get(it.p).includes(it.quote)),
+      })).filter((sec) => sec.title && sec.items.length);
+    }
+    ann.outline = outline?.length ? outline : null;
     ann.marks = [...ann.marks.filter((m) => m.by === "me"), ...marks];
     ann.boxes = [...ann.boxes.filter((b) => b.by && b.by !== "ai"), ...boxes];
     let translated = 0;
@@ -748,7 +893,7 @@ function startNotelayer() {
       saveUserDocs();
     }
     save(); render();
-    return { marks: marks.length, lost, boxes: boxes.length, translated };
+    return { marks: marks.length, lost, boxes: boxes.length, translated, outline: ann.outline?.length ?? 0 };
   }
   window.NL = {
     addDocument, applyAnnotations,
