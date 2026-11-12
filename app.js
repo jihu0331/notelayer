@@ -148,6 +148,7 @@ function startNotelayer() {
       onEmpty: () => { b.text = before; save(); render(); }, // 설명을 다 지우면 원래 글로 되돌린다. 상자를 없애려면 지우기
       onLabel: (tag) => openLabelMenu(b, tpl, tag),
     });
+    box.dataset.label = b.label; // 본문 강조에서 설명 종류로 고를 때 쓴다
     const body = el("div", "body");
     const whoEl = box.querySelector(".who");
     const touched = () => { if (!isPerson) b.edited = true; whoEl.textContent = whoText(b, "ai"); saveSoon(); };
@@ -234,19 +235,20 @@ function startNotelayer() {
     $("trLabel").title = hasTr ? "" : "이 문서는 번역할 필요가 없는 한국어 문서입니다";
     $("editSwitch").setAttribute("aria-checked", String(ui.editing));
 
+    if (ui.focus?.startsWith("box:") && !tpl.boxes[ui.focus.slice(4)]) ui.focus = null;
     // 출처와 범례: 모양의 뜻은 고정, 이름만 템플릿이 정한다
     $("meta").textContent = `원문: ${d.source} · 원문은 고치지 않고 그 위에 층만 얹는다`;
     const legend = $("legend");
     legend.replaceChildren(el("div", "reader", `${tpl.name} · 읽는 사람: ${tpl.reader} · ${tpl.rules.join(" · ")}`));
     const sumBtn = el("button", "k sum-open", "요약 보기");
-    sumBtn.title = "표시한 문장을 모은 요약을 오른쪽에 열기";
-    sumBtn.onclick = () => { ui.summary = !ui.summary; ui.focus = null; renderSummary(); };
+    sumBtn.title = "핵심 문장을 구조화한 요약을 오른쪽에 열기";
+    sumBtn.onclick = () => { ui.summary = !ui.summary; renderSummary(); };
     legend.append(sumBtn);
     for (const [kind, cls, name] of [["circle", "sw-circle", tpl.marks.circle], ["highlight", "sw-hl", tpl.marks.highlight],
       ["wave", "sw-wave", tpl.marks.wave], ["mine", "sw-mine", "내 메모"]]) {
       const k = el("button", "k");
       k.dataset.kind = kind;
-      k.title = "요약에서 이 종류만 또렷하게 보기";
+      k.title = "본문에서 이 종류만 또렷하게 보기 (다시 누르면 해제)";
       k.append(el("span", cls), el("span", null, name), el("span", "count"));
       k.onclick = () => focusKind(kind);
       legend.append(k);
@@ -257,7 +259,7 @@ function startNotelayer() {
     for (const [label, color] of Object.entries(tpl.boxes)) {
       const k = el("button", "k");
       k.dataset.kind = `box:${label}`;
-      k.title = "요약에서 이 설명만 또렷하게 보기";
+      k.title = "본문에서 이 설명만 또렷하게 보기 (다시 누르면 해제)";
       const dot = el("span", "dot"); dot.style.background = color;
       k.append(dot, el("span", null, label), el("span", "count"));
       k.onclick = () => focusKind(k.dataset.kind);
@@ -314,23 +316,31 @@ function startNotelayer() {
     const mine = ui.layers.mine ? st.memos.map((m) => locate(m.p, m.quote, m.at)).filter(Boolean).map(toRange) : [];
     const sel = selectedMark();
     const selLoc = sel && locate(sel.p, sel.quote, sel.at);
+    // 본문 강조: 범례에서 고른 종류만 또렷하게 남기고, 나머지 글·표시·설명은 흐리게 한다
+    const f = ui.focus;
+    const shows = (kind) => !f || f === kind;
     if (supportsHighlight) {
       CSS.highlights.clear();
-      CSS.highlights.set("mk-hl", new Highlight(...ranges.highlight));
-      CSS.highlights.set("mk-wave", new Highlight(...ranges.wave));
-      CSS.highlights.set("mk-mine", new Highlight(...mine));
+      if (shows("highlight")) CSS.highlights.set("mk-hl", new Highlight(...ranges.highlight));
+      if (shows("wave")) CSS.highlights.set("mk-wave", new Highlight(...ranges.wave));
+      if (shows("mine")) CSS.highlights.set("mk-mine", new Highlight(...mine));
       if (selLoc) CSS.highlights.set("mk-sel", new Highlight(toRange(selLoc)));
+      const focused = f === "mine" ? mine : ranges[f] ?? [];
+      if (f) CSS.highlights.set("mk-focus", new Highlight(...focused));
     }
-    circleRanges = ranges.circle;
+    circleRanges = shows("circle") ? ranges.circle : [];
+    article.classList.toggle("focus-mode", !!f);
+    for (const box of article.querySelectorAll(".box")) {
+      const on = f === "mine" ? box.classList.contains("mine") : f?.startsWith("box:") && !box.classList.contains("mine") && box.dataset.label === f.slice(4);
+      box.classList.toggle("dim", !!f && !on);
+    }
     $("orphans").textContent = (orphans.length ? `원래 자리를 못 찾은 표시: ${orphans.join(", ")}` : "")
       + (supportsHighlight ? "" : " 이 브라우저는 형광펜 기능을 지원하지 않아 동그라미만 보입니다.");
     queueDraw();
     renderSummary();
   }
 
-  // ── 오른쪽 요약: 표시가 걸린 문장을 원문 그대로 모으되, 묶음과 순서는 이해하기 쉽게 짠다 ──
-  // 요약 구조(outline: 묶음 제목 + 들어갈 문장)가 있으면 그 순서를 따르고,
-  // 없으면 핵심어마다 묶음을 만들어 그 핵심어가 나오는 문장을 모은다. 문장 글자는 늘 원문 그대로다.
+  // ── 범례 누르기 = 본문 강조 켜고 끄기 ──
   function countKind(kind) {
     const { st, ann } = cur();
     if (kind.startsWith("box:")) return ui.layers.boxes ? ann.boxes.filter((b) => b.label === kind.slice(4)).length : 0;
@@ -338,10 +348,24 @@ function startNotelayer() {
     return visibleMarks(ann).filter((m) => m.kind === kind).length;
   }
   function focusKind(kind) {
-    if (!ui.summary) { ui.summary = true; ui.focus = kind; }
-    else ui.focus = ui.focus === kind ? null : kind;
-    renderSummary();
+    ui.focus = ui.focus === kind ? null : kind;
+    paintMarks();
+    // 고른 종류의 첫 자리가 화면 밖이면 그쪽으로 옮긴다
+    const first = ui.focus && firstFocusedTop();
+    if (first != null && (first < 0 || first > innerHeight - 80)) scrollTo({ top: first + scrollY - innerHeight / 3, behavior: "smooth" });
   }
+  function firstFocusedTop() {
+    const f = ui.focus;
+    if (f.startsWith("box:") || f === "mine") return article.querySelector(".box:not(.dim)")?.getBoundingClientRect().top ?? null;
+    const { ann } = cur();
+    const m = visibleMarks(ann).filter((x) => x.kind === f).map((x) => locate(x.p, x.quote, x.at)).filter(Boolean)
+      .sort((a, b) => a.node.parentElement.dataset.p - b.node.parentElement.dataset.p || a.start - b.start)[0];
+    return m ? toRange(m).getBoundingClientRect().top : null;
+  }
+
+  // ── 오른쪽 요약: 원문 문장 그대로, 묶음과 순서는 이해하기 쉽게, 꼭 필요한 문장만 ──
+  // 추가 설명은 본문의 설명 상자(LLM)가 맡고, 요약은 구조와 핵심만 보여 준다.
+  // 요약 구조(outline)가 있으면 그 묶음·순서를 따르고, 없으면 핵심어마다 묶음을 만든다.
   // 문장 나누기: 마침표·물음표·느낌표 뒤에 빈칸이 오거나 문단이 끝나는 곳. "HTTP/1.1" 처럼 뒤에 글자가 붙은 점은 넘긴다
   function sentencesOf(text) {
     const out = [];
@@ -367,13 +391,14 @@ function startNotelayer() {
   const byDoc = (a, b) => a.p - b.p || a.start - b.start;
 
   function buildSummary() {
-    const { d, st, ann } = cur();
-    const marks = visibleMarks(ann).map((m) => ({ m, loc: locate(m.p, m.quote, m.at) })).filter((x) => x.loc);
-    const memos = ui.layers.mine ? st.memos.map((m) => ({ m, loc: locate(m.p, m.quote, m.at) })).filter((x) => x.loc) : [];
+    const { d, ann } = cur();
+    // 요약에 쓰는 표시는 핵심어와 외울 문장(꼭 필요한 것)뿐. 확인 필요·메모는 본문에서 본다
+    const marks = visibleMarks(ann).filter((m) => m.kind === "circle" || m.kind === "highlight")
+      .map((m) => ({ m, loc: locate(m.p, m.quote, m.at) })).filter((x) => x.loc);
     const used = new Set();
     const take = (s) => { if (!s || used.has(s.key)) return null; used.add(s.key); return s; };
     const candidates = [];
-    for (const x of [...marks, ...memos]) {
+    for (const x of marks) {
       const s = sentenceAt(x.m.p, x.loc.start);
       if (s && !candidates.some((c) => c.key === s.key)) candidates.push(s);
     }
@@ -391,8 +416,8 @@ function startNotelayer() {
         if (items.length) sections.push({ title: sec.title, items });
       }
       const rest = candidates.filter((s) => !used.has(s.key)).map(take);
-      if (rest.length) sections.push({ title: "그 밖에 짚은 곳", items: rest });
-      return { sections, marks, memos, source: "outline" };
+      if (rest.length) sections.push({ title: "그 밖의 핵심", items: rest });
+      return { sections, marks, source: "outline" };
     }
     // 구조가 없을 때: 핵심어(동그라미)가 처음 나오는 순서대로 묶음을 만든다.
     // 먼저 핵심어마다 자기 동그라미가 있는 문장을 배정하고, 남은 문장은 처음 언급한 핵심어 묶음에 넣는다
@@ -413,119 +438,67 @@ function startNotelayer() {
     }
     for (const g of groups) if (g.items.length) sections.push({ title: g.title, items: g.items.sort(byDoc) });
     const rest = candidates.filter((s) => !used.has(s.key)).map(take);
-    if (rest.length) sections.push({ title: sections.length ? "그 밖에 짚은 곳" : "짚은 곳", items: rest });
-    return { sections, marks, memos, source: "auto" };
+    if (rest.length) sections.push({ title: sections.length ? "그 밖의 핵심" : "핵심", items: rest });
+    return { sections, marks, source: "auto" };
   }
 
-  // 요약 안의 문장: 원문 글자 그대로, 그 위에 같은 모양의 표시를 다시 입힌다
-  function sentenceEl(s, marks, memos) {
+  // 요약 안의 문장: 원문 글자 그대로. 핵심어는 굵게, 외울 문장은 옅은 형광펜만
+  function sentenceEl(s, marks) {
     const ranges = [];
     for (const x of marks) if (x.m.p === s.p && x.loc.end > s.start && x.loc.start < s.end) ranges.push([Math.max(x.loc.start, s.start), Math.min(x.loc.end, s.end), x.m.kind]);
-    for (const x of memos) if (x.m.p === s.p && x.loc.end > s.start && x.loc.start < s.end) ranges.push([Math.max(x.loc.start, s.start), Math.min(x.loc.end, s.end), "mine"]);
     const cuts = [...new Set([s.start, s.end, ...ranges.flatMap(([a, z]) => [a, z])])].sort((a, b) => a - b);
     const text = cur().d.blocks.find((b) => b.p === s.p).text;
-    const node = el("div", "sent");
-    const kinds = new Set();
+    const li = el("li", "sent");
     for (let i = 0; i < cuts.length - 1; i++) {
       const [a, z] = [cuts[i], cuts[i + 1]];
       const on = ranges.filter(([ra, rz]) => ra <= a && z <= rz).map((r) => r[2]);
       const piece = text.slice(a, z);
-      if (!on.length) { node.append(document.createTextNode(piece)); continue; }
-      on.forEach((k) => kinds.add(k));
-      node.append(el("span", on.map((k) => `k-${k}`).join(" "), piece));
+      li.append(on.length ? el("span", on.map((k) => `k-${k}`).join(" "), piece) : document.createTextNode(piece));
     }
-    node.dataset.kinds = [...kinds].join("|"); // 설명 이름에 빈칸이 있어 | 로 나눈다
-    node.title = `문단 ${s.p} · 눌러서 본문의 그 자리로`;
-    node.onclick = () => jumpTo(s.p, s.start, s.end);
-    return node;
+    li.title = "눌러서 본문의 그 자리로";
+    li.onclick = () => jumpTo(s.p, s.start, s.end);
+    return li;
   }
 
   function renderSummary() {
     const side = $("side");
-    const { tpl, ann } = cur();
-    if (ui.focus?.startsWith("box:") && !tpl.boxes[ui.focus.slice(4)]) ui.focus = null; // 템플릿을 바꿔 없는 종류면 푼다
+    const { tpl } = cur();
     for (const k of document.querySelectorAll(".legend button.k[data-kind]")) {
       k.querySelector(".count").textContent = String(countKind(k.dataset.kind));
-      k.setAttribute("aria-pressed", String(ui.summary && ui.focus === k.dataset.kind));
+      k.setAttribute("aria-pressed", String(ui.focus === k.dataset.kind));
     }
-    const openBtn = document.querySelector(".legend .sum-open");
-    if (openBtn) openBtn.setAttribute("aria-pressed", String(ui.summary));
+    document.querySelector(".legend .sum-open")?.setAttribute("aria-pressed", String(ui.summary));
     document.body.classList.toggle("side-open", ui.summary);
     if (!ui.summary) { side.hidden = true; return; }
     side.hidden = false;
 
-    const { sections, marks, memos, source } = buildSummary();
+    const { sections, marks } = buildSummary();
     const header = el("header");
     const close = el("button", "close", "×");
     close.title = "닫기";
-    close.onclick = () => { ui.summary = false; ui.focus = null; renderSummary(); };
-    header.append(el("span", null, `요약 · ${tpl.name}`), close);
-
-    // 고르면 그 종류가 든 문장만 또렷하게, 나머지는 흐리게
-    const chips = el("div", "chips");
-    const chipDefs = [[null, "전체"], ["circle", `${SHAPE.circle} ${tpl.marks.circle}`], ["highlight", `${SHAPE.highlight} ${tpl.marks.highlight}`],
-      ["wave", `${SHAPE.wave} ${tpl.marks.wave}`], ["mine", "내 메모"], ...Object.keys(tpl.boxes).map((l) => [`box:${l}`, l])];
-    for (const [kind, label] of chipDefs) {
-      const c = el("button", "chip", label);
-      c.setAttribute("aria-pressed", String(ui.focus === kind));
-      c.onclick = () => { ui.focus = kind; renderSummary(); };
-      chips.append(c);
-    }
-    const note = el("div", "sum-note", source === "outline"
-      ? "문장은 원문 그대로이고, 묶음과 순서는 요약 구조를 따릅니다. 문장을 누르면 본문의 그 자리로 갑니다."
-      : "문장은 원문 그대로이고, 핵심어가 처음 나오는 순서로 묶었습니다. 문장을 누르면 본문의 그 자리로 갑니다.");
+    close.onclick = () => { ui.summary = false; renderSummary(); };
+    const title = el("div", "sum-title");
+    title.append(el("strong", null, "요약"), el("span", null, tpl.name));
+    header.append(title, close);
 
     const body = el("div", "sum-body");
-    if (!sections.length) body.append(el("div", "empty", "아직 표시가 없습니다. 수정 모드에서 표시하거나 \"AI 표시 만들기\"를 써 보세요."));
-    const firstItemOfPara = new Map();
+    if (!sections.length) body.append(el("p", "empty", "핵심어나 외울 문장을 표시하면 여기에 구조화된 요약이 생깁니다."));
+    const list = el("ol", "sum-list");
     for (const sec of sections) {
-      const box = el("section", "sum-sec");
-      box.append(el("h3", null, sec.title));
-      for (const s of sec.items) {
-        const wrap = el("div", "item-wrap");
-        wrap.append(sentenceEl(s, marks, memos));
-        for (const x of memos) {
-          if (x.m.p !== s.p || x.loc.start < s.start || x.loc.start >= s.end) continue;
-          const n = el("div", "sum-memo", `나: ${x.m.text || "(빈 메모)"}`);
-          n.dataset.kinds = "mine";
-          n.onclick = () => jumpToBox(x.m.id);
-          wrap.append(n);
-        }
-        if (!firstItemOfPara.has(s.p)) firstItemOfPara.set(s.p, wrap);
-        box.append(wrap);
-      }
-      body.append(box);
+      const li = el("li", "sum-sec");
+      const ul = el("ul");
+      for (const s of sec.items) ul.append(sentenceEl(s, marks));
+      li.append(el("h3", null, sec.title), ul);
+      list.append(li);
     }
-    // 설명 상자의 첫 줄은 같은 문단에서 처음 요약에 든 문장 아래에 붙인다. 문단이 요약에 없으면 끝에 모은다
-    const leftover = [];
-    if (ui.layers.boxes) {
-      for (const b of ann.boxes) {
-        const n = el("div", "sum-box");
-        n.style.setProperty("--c", tpl.boxes[b.label] ?? "#6b7280");
-        n.append(el("span", "tag", b.label), document.createTextNode(` ${b.text}`));
-        n.dataset.kinds = `box:${b.label}`;
-        n.onclick = () => jumpToBox(b.id);
-        const host = firstItemOfPara.get(b.p);
-        if (host) host.append(n); else leftover.push(n);
-      }
-    }
-    if (leftover.length) { const sec = el("section", "sum-sec"); sec.append(el("h3", null, "그 밖의 설명"), ...leftover); body.append(sec); }
-
-    // 흐리게 하기
-    if (ui.focus) {
-      for (const w of body.querySelectorAll(".item-wrap")) {
-        const has = [...w.querySelectorAll("[data-kinds]")].some((n) => n.dataset.kinds.split("|").includes(ui.focus));
-        w.classList.toggle("dim", !has);
-        for (const n of w.querySelectorAll(".sum-memo, .sum-box")) n.classList.toggle("dim", !n.dataset.kinds.split("|").includes(ui.focus));
-      }
-      for (const n of body.querySelectorAll(":scope > .sum-sec > .sum-box")) n.classList.toggle("dim", n.dataset.kinds !== ui.focus);
-      body.dataset.focus = ui.focus;
-    }
-    for (const sec of body.querySelectorAll(".sum-sec")) {
-      if (ui.focus && !sec.querySelector(".item-wrap:not(.dim), :scope > .sum-box:not(.dim)")) sec.classList.add("dim");
-    }
-    side.replaceChildren(header, chips, note, body);
+    if (sections.length) body.append(list, el("p", "sum-foot", "문장은 원문 그대로입니다. 누르면 본문의 그 자리로 갑니다."));
+    side.replaceChildren(header, body);
   }
+
+  // Esc 로 본문 강조를 푼다(열린 창이 없을 때)
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && ui.focus && !document.querySelector("dialog[open]")) { ui.focus = null; paintMarks(); }
+  });
 
   // 본문의 그 자리로 화면을 옮기고 잠깐 반짝인다
   let flashTimer = 0;
@@ -540,14 +513,6 @@ function startNotelayer() {
       clearTimeout(flashTimer);
       flashTimer = setTimeout(() => CSS.highlights.delete("mk-flash"), 1600);
     }
-  }
-  function jumpToBox(id) {
-    const box = article.querySelector(`.box[data-id="${id}"]`);
-    if (!box) return;
-    box.open = true; openIds.add(id);
-    const r = box.getBoundingClientRect();
-    scrollTo({ top: r.top + scrollY - innerHeight / 3, behavior: "smooth" });
-    box.classList.remove("flash"); void box.offsetWidth; box.classList.add("flash");
   }
   // AI 가 단 표시는 "AI 표시" 층, 내가 달거나 고친 표시는 "내 표시·메모" 층에 속한다
   function visibleMarks(ann) {

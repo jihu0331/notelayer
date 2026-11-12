@@ -268,3 +268,30 @@
   .more { position: static; }
   .menu { position: fixed; left: 16px; right: 16px; top: calc(var(--bar-h, 52px) + 4px); min-width: 0; }
 }
+
+/* ── 요약 v2: 번호 묶음 + 글머리표, 핵심어 굵게·외울 문장 옅은 형광펜만 ── */
+.side { background: #fff; }
+.side header { padding: 14px 18px; }
+.side .sum-title { display: flex; align-items: baseline; gap: 8px; }
+.side .sum-title strong { font-size: 16px; }
+.side .sum-title span { font-size: 12px; font-weight: 400; color: #9ca3af; }
+.side .sum-body { padding: 4px 18px 40px; }
+.side .sum-list { list-style: none; counter-reset: sec; margin: 0; padding: 0; }
+.side .sum-sec { counter-increment: sec; margin: 0 0 18px; }
+.side .sum-sec h3 { display: flex; gap: 8px; align-items: baseline; margin: 0 0 6px; font: 600 14px/1.5 var(--ui); color: #111827; border: 0; padding: 0; }
+.side .sum-sec h3::before { content: counter(sec); flex: none; width: 20px; height: 20px; border-radius: 50%; background: #111827; color: #fff;
+  font-size: 11px; display: inline-grid; place-items: center; transform: translateY(-1px); }
+.side .sum-sec ul { margin: 0; padding: 0 0 0 28px; }
+.side .sum-sec .sent { margin: 0 0 6px; padding: 1px 4px; border-radius: 6px; font: 14.5px/1.75 var(--body-font); color: #374151; cursor: pointer; }
+.side .sum-sec .sent::marker { color: #9ca3af; }
+.side .sum-sec .sent:hover { background: #f9fafb; color: #111827; }
+.side .sent .k-circle { font-weight: 700; color: #111827; box-shadow: none; padding: 0; border-radius: 0; }
+.side .sent .k-highlight { background: color-mix(in srgb, var(--hl) 55%, transparent); border-radius: 2px; }
+.side .sum-foot { margin: 8px 0 0; color: #9ca3af; font-size: 12px; }
+.side .empty { color: #6b7280; font-size: 13px; }
+
+/* ── 본문 강조: 고른 종류만 또렷하게, 나머지 글·설명은 흐리게 ── */
+article.focus-mode p[data-p], article.focus-mode .tr { color: color-mix(in srgb, var(--ink) 32%, transparent); transition: color .2s; }
+::highlight(mk-focus) { color: var(--ink); }
+article .box { transition: opacity .2s; }
+article .box.dim { opacity: .25; }
