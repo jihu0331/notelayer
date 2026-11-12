@@ -126,7 +126,8 @@ window.NL_DOCS.push({
             "role": "절차",
             "parent": null,
             "def": null,
-            "match": []
+            "match": [],
+            "gloss": "코드가 운영에 나가기까지의 순서"
           },
           {
             "id": "pr",
@@ -140,7 +141,8 @@ window.NL_DOCS.push({
             "match": [
               "PR",
               "리뷰어"
-            ]
+            ],
+            "gloss": "main 에는 PR 로만. 리뷰어 두 명의 승인이 필요"
           },
           {
             "id": "owner",
@@ -153,7 +155,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "코드 오너"
-            ]
+            ],
+            "gloss": "폴더마다 정해 둔 책임자. 리뷰어 중 한 명이어야 함"
           },
           {
             "id": "bbang",
@@ -166,7 +169,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "빵틀"
-            ]
+            ],
+            "gloss": "사내 배포 도구. 스테이징을 거쳐 운영으로 보냄"
           },
           {
             "id": "staging",
@@ -179,7 +183,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "스테이징"
-            ]
+            ],
+            "gloss": "운영과 같은 시험장. 30분 동안 오류가 없어야 운영 배포"
           },
           {
             "id": "friday",
@@ -192,7 +197,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "금요일 오후 4시"
-            ]
+            ],
+            "gloss": "금요일 오후 4시 이후에는 배포하지 않음"
           },
           {
             "id": "oncall",
@@ -205,7 +211,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "온콜"
-            ]
+            ],
+            "gloss": "그 주의 장애 대응 당번"
           },
           {
             "id": "hotfix",
@@ -218,7 +225,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "핫픽스"
-            ]
+            ],
+            "gloss": "온콜 승인만으로 바로 운영 배포. 그래도 리뷰 한 명은 받기"
           },
           {
             "id": "incident",
@@ -232,7 +240,8 @@ window.NL_DOCS.push({
             "match": [
               "장애",
               "되돌리기"
-            ]
+            ],
+            "gloss": "먼저 알리고, 되돌리고, 원인은 그다음. 회고는 3영업일 안에"
           },
           {
             "id": "leave",
@@ -246,7 +255,8 @@ window.NL_DOCS.push({
             "match": [
               "휴가",
               "플렉스"
-            ]
+            ],
+            "gloss": "플렉스에서 신청. 온콜 주간이면 교대부터"
           }
         ],
         "links": [

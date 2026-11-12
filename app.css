@@ -335,3 +335,7 @@ article .box.dim { opacity: .25; }
   border-radius: 999px; background: #fff; font: 500 11px/1.7 var(--ui); color: #6b7280; }
 .cmap .cm-link.cm-arrow { border: 0; background: transparent; padding: 1px 2px; font: 600 13px var(--ui); color: #b45309; }
 .cmap .cm-link.cm-arrow:hover { text-decoration: underline; }
+
+/* 개념 한 줄 풀이(늘 보임)와 고른 개념의 원문 문장 */
+.cmap .cm-gloss { margin: -3px 0 4px 2px; font: 13px/1.55 var(--ui); color: #6b7280; }
+.cmap .cm-def-label { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 999px; background: #fde68a; color: #92400e; font: 600 11px/1.6 var(--ui); vertical-align: 1px; }

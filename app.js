@@ -513,7 +513,7 @@ function startNotelayer() {
     body.append(map);
     body.append(el("p", "sum-foot", c.source === "auto"
       ? "개념 관계 정보가 없어 핵심어만 나란히 두었습니다. \"AI 표시 만들기\"로 관계(하위·동등·해결 등)를 받을 수 있습니다."
-      : "개념 이름과 관계는 AI 가 정한 것이고, 정의 문장만 원문 그대로입니다. 개념을 누르면 본문에서 그 개념이 나오는 자리만 강조됩니다(화면은 움직이지 않습니다). 수정 모드에서 상위 개념과 역할을 바꿀 수 있습니다."));
+      : "개념 이름·관계·풀이는 AI 가 쓴 것이라 틀릴 수 있습니다. 개념을 누르면 원문 문장이 함께 보이고, 본문에서 그 개념이 나오는 자리만 강조됩니다. 수정 모드에서 상위 개념과 역할을 바꿀 수 있습니다."));
   }
   function nodeEl(n, c, showRole = true) {
     const li = el("li");
@@ -534,12 +534,15 @@ function startNotelayer() {
       row.append(chip);
     }
     li.append(row);
+    // 한 줄 풀이: 원문을 옮기지 않고 쉬운 말로 쓴 요약(AI 가 쓴 것). 늘 보인다
+    if (n.gloss) li.append(el("div", "cm-gloss", n.gloss));
     if (ui.concept === n.id) {
-      // 정의 문장(원문 그대로)
+      // 개념을 고르면 풀이를 확인할 수 있게 원문 문장을 함께 보여 준다
       const loc = n.def && locate(n.def.p, n.def.quote);
       const s = loc && sentenceAt(n.def.p, loc.start);
       if (s) {
-        const def = el("div", "cm-def", s.text);
+        const def = el("div", "cm-def");
+        def.append(el("span", "cm-def-label", "원문"), document.createTextNode(s.text));
         li.append(def);
       }
       if (ui.editing) li.append(conceptEditor(n));
@@ -908,7 +911,8 @@ function startNotelayer() {
             ? { p: Number(n.def.p), quote: n.def.quote } : null;
           const match = (Array.isArray(n.match) ? n.match : []).filter((w) => typeof w === "string" && w.trim()).slice(0, 6);
           return { id: String(n.id), term: n.term.trim().slice(0, 60), role: typeof n.role === "string" ? n.role.trim().slice(0, 30) : "",
-            parent: n.parent == null || n.parent === "" ? null : String(n.parent), def, match: match.length ? match : [n.term.trim()] };
+            parent: n.parent == null || n.parent === "" ? null : String(n.parent), def, match: match.length ? match : [n.term.trim()],
+            gloss: typeof n.gloss === "string" ? n.gloss.trim().slice(0, 80) : "" };
         });
       const ids = new Set(nodes.map((n) => n.id));
       for (const n of nodes) if (n.parent && (!ids.has(n.parent) || n.parent === n.id)) n.parent = null;

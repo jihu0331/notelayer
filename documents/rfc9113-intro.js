@@ -138,7 +138,8 @@ window.NL_DOCS.push({
             "match": [
               "underlying transport",
               "the transport"
-            ]
+            ],
+            "gloss": "HTTP 아래에서 실제로 데이터를 나르는 계층(여기서는 TCP)"
           },
           {
             "id": "problems",
@@ -146,7 +147,8 @@ window.NL_DOCS.push({
             "role": "문제",
             "parent": null,
             "def": null,
-            "match": []
+            "match": [],
+            "gloss": "HTTP/1.0·1.1 이 가진 성능 문제 두 가지"
           },
           {
             "id": "hol",
@@ -159,7 +161,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "head-of-line blocking"
-            ]
+            ],
+            "gloss": "앞 요청이 막히면 뒤 요청이 모두 기다리는 현상"
           },
           {
             "id": "pipe",
@@ -172,7 +175,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "pipelining"
-            ]
+            ],
+            "gloss": "요청을 연달아 보내는 방식. 응답 순서 제약 때문에 절반의 해결"
           },
           {
             "id": "fields",
@@ -185,7 +189,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "HTTP fields"
-            ]
+            ],
+            "gloss": "요청마다 길고 비슷한 헤더가 반복돼 낭비가 큼"
           },
           {
             "id": "cwnd",
@@ -198,7 +203,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "congestion window"
-            ]
+            ],
+            "gloss": "TCP 가 확인 없이 한 번에 보낼 수 있는 양. 새 연결에선 작음"
           },
           {
             "id": "h2",
@@ -211,7 +217,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "HTTP/2"
-            ]
+            ],
+            "gloss": "HTTP 의 의미는 그대로 두고 연결을 쓰는 방식을 바꿈"
           },
           {
             "id": "inter",
@@ -224,7 +231,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "interleaving"
-            ]
+            ],
+            "gloss": "같은 연결에서 여러 메시지를 번갈아 끼워 보냄"
           },
           {
             "id": "coding",
@@ -237,7 +245,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "efficient coding"
-            ]
+            ],
+            "gloss": "헤더를 효율적으로 부호화해 크기를 줄임"
           },
           {
             "id": "prio",
@@ -250,7 +259,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "prioritization"
-            ]
+            ],
+            "gloss": "중요한 요청을 먼저 끝내게 하는 신호. 이 문서 5.3.2절에서 폐기"
           },
           {
             "id": "framing",
@@ -263,7 +273,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "binary message framing"
-            ]
+            ],
+            "gloss": "메시지를 이진 프레임으로 나눠 기계가 빠르게 처리"
           },
           {
             "id": "limit",
@@ -276,7 +287,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "TCP head-of-line blocking"
-            ]
+            ],
+            "gloss": "TCP 층의 HOL 블로킹은 HTTP/2 로도 남음"
           }
         ],
         "links": [

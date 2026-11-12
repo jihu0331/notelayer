@@ -143,7 +143,8 @@ window.NL_DOCS.push({
             "match": [
               "HOL 블로킹",
               "Head-of-Line Blocking"
-            ]
+            ],
+            "gloss": "앞 요청이 막히면 뒤 요청까지 줄줄이 기다리는 현상"
           },
           {
             "id": "hol-http",
@@ -156,7 +157,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "HTTP 층의 HOL 블로킹"
-            ]
+            ],
+            "gloss": "응답을 순서대로 받아야 해서 생기는 대기. HTTP/2 가 없앰"
           },
           {
             "id": "hol-tcp",
@@ -170,7 +172,8 @@ window.NL_DOCS.push({
             "match": [
               "TCP 층의 HOL 블로킹",
               "패킷 하나가 사라지면"
-            ]
+            ],
+            "gloss": "잃은 패킷을 다시 받을 때까지 그 뒤 데이터가 멈추는 대기"
           },
           {
             "id": "h1fix",
@@ -178,7 +181,8 @@ window.NL_DOCS.push({
             "role": "임시 방편",
             "parent": null,
             "def": null,
-            "match": []
+            "match": [],
+            "gloss": "HTTP/1.1 시절 HOL 블로킹을 피하려던 방법들"
           },
           {
             "id": "multi",
@@ -191,7 +195,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "연결을 여러 개"
-            ]
+            ],
+            "gloss": "도메인마다 연결을 여럿(크롬은 6개) 열어 병렬로 받음. 연결 비용이 큼"
           },
           {
             "id": "pipe",
@@ -204,7 +209,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "파이프라이닝"
-            ]
+            ],
+            "gloss": "응답을 기다리지 않고 요청을 연달아 보냄. 응답 순서 제약 때문에 안 쓰임"
           },
           {
             "id": "mux",
@@ -217,7 +223,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "멀티플렉싱"
-            ]
+            ],
+            "gloss": "연결 하나에 여러 요청·응답을 섞어 동시에 주고받는 방식"
           },
           {
             "id": "frame",
@@ -230,7 +237,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "프레임"
-            ]
+            ],
+            "gloss": "메시지를 잘게 나눈 조각. HTTP/2 전송의 최소 단위"
           },
           {
             "id": "stream",
@@ -243,7 +251,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "스트림"
-            ]
+            ],
+            "gloss": "요청 하나와 그 응답이 오가는 통로. 번호로 조각을 다시 맞춤"
           },
           {
             "id": "hpack",
@@ -256,7 +265,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "HPACK"
-            ]
+            ],
+            "gloss": "자주 쓰는 헤더는 표 번호로, 한 번 보낸 헤더는 번호만 보내는 압축"
           },
           {
             "id": "quic",
@@ -270,7 +280,8 @@ window.NL_DOCS.push({
             "match": [
               "QUIC",
               "HTTP/3"
-            ]
+            ],
+            "gloss": "UDP 위에서 스트림마다 따로 순서를 지켜 TCP 층 대기를 줄임"
           },
           {
             "id": "alpn",
@@ -283,7 +294,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "ALPN"
-            ]
+            ],
+            "gloss": "TLS 핸드셰이크 중에 h2 를 쓸지 미리 정하는 확장"
           }
         ],
         "links": [
@@ -395,7 +407,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "연결마다"
-            ]
+            ],
+            "gloss": "새 연결마다 TCP·TLS 준비 과정을 다시 치러야 하는 부담"
           },
           {
             "id": "tcp-hs",
@@ -408,7 +421,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "TCP 핸드셰이크"
-            ]
+            ],
+            "gloss": "데이터를 보내기 전에 세 번 주고받아 연결을 여는 절차"
           },
           {
             "id": "tls",
@@ -422,7 +436,8 @@ window.NL_DOCS.push({
             "match": [
               "TLS 협상",
               "TLS 핸드셰이크"
-            ]
+            ],
+            "gloss": "암호화 방식과 키를 정하는 절차"
           },
           {
             "id": "unit",
@@ -435,7 +450,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "하나의 TCP 연결"
-            ]
+            ],
+            "gloss": "HTTP/2 는 연결 하나에 메시지를 조각내 섞어 보냄"
           },
           {
             "id": "frame",
@@ -448,7 +464,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "프레임"
-            ]
+            ],
+            "gloss": "길이·종류·스트림 번호가 붙은 가장 작은 전송 조각"
           },
           {
             "id": "stream",
@@ -461,7 +478,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "스트림"
-            ]
+            ],
+            "gloss": "요청 하나와 응답이 오가는 논리적 통로"
           },
           {
             "id": "hpack",
@@ -475,7 +493,8 @@ window.NL_DOCS.push({
             "match": [
               "HPACK",
               "헤더"
-            ]
+            ],
+            "gloss": "한 번 보낸 헤더는 양쪽이 기억해 두고 번호만 보냄"
           },
           {
             "id": "tcp-limit",
@@ -488,7 +507,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "패킷 하나가 사라지면"
-            ]
+            ],
+            "gloss": "TCP 는 순서를 지키느라 패킷 하나만 잃어도 뒤가 전부 멈춤"
           },
           {
             "id": "quic",
@@ -503,7 +523,8 @@ window.NL_DOCS.push({
               "UDP",
               "QUIC",
               "HTTP/3"
-            ]
+            ],
+            "gloss": "UDP 위의 QUIC 로 스트림마다 순서를 따로 지킴"
           },
           {
             "id": "https",
@@ -517,7 +538,8 @@ window.NL_DOCS.push({
             "match": [
               "HTTPS",
               "보안 연결"
-            ]
+            ],
+            "gloss": "브라우저는 암호화된 연결 위의 HTTP/2 만 씀"
           },
           {
             "id": "alpn",
@@ -530,7 +552,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "ALPN"
-            ]
+            ],
+            "gloss": "TLS 협상 중에 h2 사용을 미리 정함"
           }
         ],
         "links": [

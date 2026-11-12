@@ -109,7 +109,8 @@ window.NL_DOCS.push({
             "role": "분류",
             "parent": null,
             "def": null,
-            "match": []
+            "match": [],
+            "gloss": "글에서 살려야 할 부분"
           },
           {
             "id": "app",
@@ -123,7 +124,8 @@ window.NL_DOCS.push({
             "match": [
               "출석",
               "120명"
-            ]
+            ],
+            "gloss": "동아리 120명이 쓰는 출석 앱을 직접 만든 경험"
           },
           {
             "id": "result",
@@ -137,7 +139,8 @@ window.NL_DOCS.push({
             "match": [
               "10분",
               "1분"
-            ]
+            ],
+            "gloss": "출석 확인을 10분에서 1분으로 줄인 숫자 근거"
           },
           {
             "id": "fix",
@@ -145,7 +148,8 @@ window.NL_DOCS.push({
             "role": "분류",
             "parent": null,
             "def": null,
-            "match": []
+            "match": [],
+            "gloss": "고쳐야 할 부분"
           },
           {
             "id": "cliche",
@@ -159,7 +163,8 @@ window.NL_DOCS.push({
             "match": [
               "어릴 때부터",
               "다양한 프로젝트"
-            ]
+            ],
+            "gloss": "누구나 쓰는 시작이라 읽는 사람 기억에 남지 않음"
           },
           {
             "id": "vague",
@@ -174,7 +179,8 @@ window.NL_DOCS.push({
               "어떤 문제든",
               "업계 최고",
               "최선을 다하는"
-            ]
+            ],
+            "gloss": "'어떤 문제든', '업계 최고' 처럼 근거 없는 말"
           }
         ],
         "links": [

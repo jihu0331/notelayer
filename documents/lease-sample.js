@@ -167,7 +167,8 @@ window.NL_DOCS.push({
             "role": "분류",
             "parent": null,
             "def": null,
-            "match": []
+            "match": [],
+            "gloss": "처음과 매달 내는 돈"
           },
           {
             "id": "deposit",
@@ -180,7 +181,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "보증금"
-            ]
+            ],
+            "gloss": "계약할 때 200만 원, 2027-02-28 에 1,800만 원"
           },
           {
             "id": "rent",
@@ -194,7 +196,8 @@ window.NL_DOCS.push({
             "match": [
               "차임",
               "육십오만 원"
-            ]
+            ],
+            "gloss": "매달 25일에 65만 원"
           },
           {
             "id": "fee",
@@ -207,7 +210,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "관리비"
-            ]
+            ],
+            "gloss": "매달 10만 원. 무엇이 포함되는지 정해지지 않음"
           },
           {
             "id": "period",
@@ -215,7 +219,8 @@ window.NL_DOCS.push({
             "role": "분류",
             "parent": null,
             "def": null,
-            "match": []
+            "match": [],
+            "gloss": "계약이 이어지는 기간"
           },
           {
             "id": "term",
@@ -229,7 +234,8 @@ window.NL_DOCS.push({
             "match": [
               "2년",
               "2029년 2월 28일"
-            ]
+            ],
+            "gloss": "2년 계약. 만료 6개월 전부터 2개월 전 사이에 갱신 요구 가능"
           },
           {
             "id": "guard",
@@ -237,7 +243,8 @@ window.NL_DOCS.push({
             "role": "가장 중요",
             "parent": null,
             "def": null,
-            "match": []
+            "match": [],
+            "gloss": "보증금을 돌려받는 데 영향을 주는 조항"
           },
           {
             "id": "movein",
@@ -250,7 +257,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "전입신고"
-            ]
+            ],
+            "gloss": "전입신고를 늦추면 보증금 순위가 밀릴 수 있음"
           },
           {
             "id": "return",
@@ -263,7 +271,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "30일 이내"
-            ]
+            ],
+            "gloss": "집을 비운 뒤 30일 안에 반환. 다음 집 이사 일정과 맞는지 확인"
           },
           {
             "id": "cancel",
@@ -276,7 +285,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "2회 이상 연체"
-            ]
+            ],
+            "gloss": "법이 정한 기준(2기 연체)과 표현이 다름. 확인 필요"
           },
           {
             "id": "burden",
@@ -284,7 +294,8 @@ window.NL_DOCS.push({
             "role": "분류",
             "parent": null,
             "def": null,
-            "match": []
+            "match": [],
+            "gloss": "임차인이 부담하도록 정한 것들"
           },
           {
             "id": "repair",
@@ -297,7 +308,8 @@ window.NL_DOCS.push({
             },
             "match": [
               "수선"
-            ]
+            ],
+            "gloss": "내 잘못이 아닌 고장도 20만 원 이하면 내가 부담"
           },
           {
             "id": "restore",
@@ -311,7 +323,8 @@ window.NL_DOCS.push({
             "match": [
               "원상복구",
               "도배·장판"
-            ]
+            ],
+            "gloss": "자연히 낡은 도배·장판까지 전액 부담. 협의할 부분"
           }
         ],
         "links": [
