@@ -144,7 +144,97 @@ window.NL_DOCS.push({
             }
           ]
         }
-      ]
+      ],
+      "concepts": {
+        "topic": "지원 동기 첨삭",
+        "nodes": [
+          {
+            "id": "keep",
+            "term": "살릴 강점",
+            "role": "분류",
+            "parent": null,
+            "def": null,
+            "match": []
+          },
+          {
+            "id": "app",
+            "term": "출석 앱 경험 (120명)",
+            "role": "",
+            "parent": "keep",
+            "def": {
+              "p": 2,
+              "quote": "특히 3학년 때"
+            },
+            "match": [
+              "출석",
+              "120명"
+            ]
+          },
+          {
+            "id": "result",
+            "term": "10분 → 1분",
+            "role": "숫자 근거",
+            "parent": "keep",
+            "def": {
+              "p": 2,
+              "quote": "처음에는 출석 확인에"
+            },
+            "match": [
+              "10분",
+              "1분"
+            ]
+          },
+          {
+            "id": "fix",
+            "term": "고칠 곳",
+            "role": "분류",
+            "parent": null,
+            "def": null,
+            "match": []
+          },
+          {
+            "id": "cliche",
+            "term": "흔한 시작",
+            "role": "",
+            "parent": "fix",
+            "def": {
+              "p": 1,
+              "quote": "어릴 때부터"
+            },
+            "match": [
+              "어릴 때부터",
+              "다양한 프로젝트"
+            ]
+          },
+          {
+            "id": "vague",
+            "term": "근거 없는 큰 말",
+            "role": "",
+            "parent": "fix",
+            "def": {
+              "p": 3,
+              "quote": "어떤 문제든"
+            },
+            "match": [
+              "어떤 문제든",
+              "업계 최고",
+              "최선을 다하는"
+            ]
+          }
+        ],
+        "links": [
+          {
+            "from": "result",
+            "to": "vague",
+            "label": "이 숫자로 바꿔 쓰기"
+          },
+          {
+            "from": "app",
+            "to": "cliche",
+            "label": "첫 문단으로 당기기"
+          }
+        ]
+      }
     }
   }
 });

@@ -295,3 +295,32 @@ article.focus-mode p[data-p], article.focus-mode .tr { color: color-mix(in srgb,
 ::highlight(mk-focus) { color: var(--ink); }
 article .box { transition: opacity .2s; }
 article .box.dim { opacity: .25; }
+
+/* ── 요약 탭: 개념(구조도) · 설명(글머리표) ── */
+.side .sum-tabs { display: flex; gap: 4px; padding: 0 18px; border-bottom: 1px solid #f0f0f0; position: sticky; top: 49px; background: #fff; z-index: 1; }
+.side .sum-tab { border: 0; background: transparent; padding: 8px 10px; font: 14px var(--ui); color: #6b7280; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.side .sum-tab[aria-selected="true"] { color: #111827; font-weight: 600; border-bottom-color: #111827; }
+.side .sum-body { padding-top: 14px; }
+
+/* 개념 구조도: 주제 → 가지. 세로 들여쓰기 + 연결선 */
+.cmap { font: 14px/1.5 var(--ui); color: #1f2328; }
+.cmap .cm-topic { display: inline-block; padding: 6px 12px; border-radius: 10px; background: #111827; color: #fff; font-weight: 700; }
+.cmap ul { list-style: none; margin: 0; padding: 0 0 0 14px; }
+.cmap li { position: relative; padding: 0 0 0 18px; }
+.cmap li::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1.5px solid #d1d5db; }
+.cmap li:last-child::before { bottom: auto; height: 21px; }
+.cmap li::after { content: ""; position: absolute; left: 0; top: 21px; width: 14px; border-top: 1.5px solid #d1d5db; }
+.cmap .cm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 5px 0; }
+.cmap .cm-node { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #e5e7eb; background: #fff; border-radius: 10px; padding: 4px 10px;
+  font: 600 14px/1.4 var(--ui); color: #111827; cursor: pointer; text-align: left; }
+.cmap .cm-node:hover { border-color: #d1d5db; background: #f9fafb; }
+.cmap .cm-node.sel { border-color: #f59e0b; background: #fffbeb; box-shadow: 0 0 0 2px rgba(245, 158, 11, .25); }
+.cmap .cm-role { font: 500 11px var(--ui); color: #6b7280; background: #f3f4f6; border-radius: 999px; padding: 1px 7px; }
+.cmap .cm-link { border: 1px dashed #d1d5db; background: transparent; border-radius: 999px; padding: 1px 8px; font: 12px var(--ui); color: #4b5563; cursor: pointer; }
+.cmap .cm-link:hover { border-style: solid; color: #111827; }
+.cmap .cm-def { margin: 0 0 6px; padding: 6px 10px; border-radius: 8px; background: #f9fafb; border-left: 3px solid #f59e0b;
+  font: 13.5px/1.7 var(--body-font); color: #374151; cursor: pointer; }
+.cmap .cm-edit { display: grid; gap: 6px; margin: 0 0 8px; padding: 8px 10px; border: 1px dashed #fcd34d; border-radius: 8px; background: #fffdf5; font: 12px var(--ui); color: #92400e; }
+.cmap .cm-edit label { display: grid; gap: 2px; }
+.cmap .cm-edit select, .cmap .cm-edit input { font: 13px var(--ui); border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px 6px; color: #1f2328; background: #fff; }
+::highlight(mk-concept) { background-color: rgba(245, 158, 11, .28); }

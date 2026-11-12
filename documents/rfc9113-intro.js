@@ -172,7 +172,181 @@ window.NL_DOCS.push({
             }
           ]
         }
-      ]
+      ],
+      "concepts": {
+        "topic": "HTTP/2 가 나온 이유",
+        "nodes": [
+          {
+            "id": "transport",
+            "term": "underlying transport",
+            "role": "전제",
+            "parent": null,
+            "def": {
+              "p": 1,
+              "quote": "the underlying transport"
+            },
+            "match": [
+              "underlying transport",
+              "the transport"
+            ]
+          },
+          {
+            "id": "problems",
+            "term": "HTTP/1.x 의 문제",
+            "role": "문제",
+            "parent": null,
+            "def": null,
+            "match": []
+          },
+          {
+            "id": "hol",
+            "term": "head-of-line blocking",
+            "role": "문제 1",
+            "parent": "problems",
+            "def": {
+              "p": 2,
+              "quote": "added request pipelining"
+            },
+            "match": [
+              "head-of-line blocking"
+            ]
+          },
+          {
+            "id": "pipe",
+            "term": "pipelining",
+            "role": "부분 해결",
+            "parent": "hol",
+            "def": {
+              "p": 2,
+              "quote": "added request pipelining"
+            },
+            "match": [
+              "pipelining"
+            ]
+          },
+          {
+            "id": "fields",
+            "term": "반복되는 HTTP 필드",
+            "role": "문제 2",
+            "parent": "problems",
+            "def": {
+              "p": 3,
+              "quote": "HTTP fields are often repetitive"
+            },
+            "match": [
+              "HTTP fields"
+            ]
+          },
+          {
+            "id": "cwnd",
+            "term": "congestion window",
+            "role": "관련 개념",
+            "parent": "fields",
+            "def": {
+              "p": 3,
+              "quote": "HTTP fields are often repetitive"
+            },
+            "match": [
+              "congestion window"
+            ]
+          },
+          {
+            "id": "h2",
+            "term": "HTTP/2 의 해결",
+            "role": "해결책",
+            "parent": null,
+            "def": {
+              "p": 4,
+              "quote": "HTTP/2 addresses these issues"
+            },
+            "match": [
+              "HTTP/2"
+            ]
+          },
+          {
+            "id": "inter",
+            "term": "interleaving",
+            "role": "해결 1",
+            "parent": "h2",
+            "def": {
+              "p": 4,
+              "quote": "it allows interleaving of messages"
+            },
+            "match": [
+              "interleaving"
+            ]
+          },
+          {
+            "id": "coding",
+            "term": "efficient coding for HTTP fields",
+            "role": "해결 2",
+            "parent": "h2",
+            "def": {
+              "p": 4,
+              "quote": "it allows interleaving of messages"
+            },
+            "match": [
+              "efficient coding"
+            ]
+          },
+          {
+            "id": "prio",
+            "term": "prioritization",
+            "role": "5.3.2 에서 폐기",
+            "parent": "h2",
+            "def": {
+              "p": 4,
+              "quote": "It also allows prioritization"
+            },
+            "match": [
+              "prioritization"
+            ]
+          },
+          {
+            "id": "framing",
+            "term": "binary message framing",
+            "role": "처리 효율",
+            "parent": "h2",
+            "def": {
+              "p": 6,
+              "quote": "binary message framing"
+            },
+            "match": [
+              "binary message framing"
+            ]
+          },
+          {
+            "id": "limit",
+            "term": "TCP head-of-line blocking",
+            "role": "남은 한계",
+            "parent": null,
+            "def": {
+              "p": 5,
+              "quote": "TCP head-of-line blocking is not addressed"
+            },
+            "match": [
+              "TCP head-of-line blocking"
+            ]
+          }
+        ],
+        "links": [
+          {
+            "from": "inter",
+            "to": "hol",
+            "label": "해결"
+          },
+          {
+            "from": "coding",
+            "to": "fields",
+            "label": "해결"
+          },
+          {
+            "from": "limit",
+            "to": "hol",
+            "label": "TCP 층에 남음"
+          }
+        ]
+      }
     }
   }
 });

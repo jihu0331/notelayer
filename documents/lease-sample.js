@@ -210,7 +210,181 @@ window.NL_DOCS.push({
             }
           ]
         }
-      ]
+      ],
+      "concepts": {
+        "topic": "이 계약의 핵심",
+        "nodes": [
+          {
+            "id": "money",
+            "term": "돈",
+            "role": "분류",
+            "parent": null,
+            "def": null,
+            "match": []
+          },
+          {
+            "id": "deposit",
+            "term": "보증금 2,000만 원",
+            "role": "",
+            "parent": "money",
+            "def": {
+              "p": 2,
+              "quote": "보증금은 금 이천만 원"
+            },
+            "match": [
+              "보증금"
+            ]
+          },
+          {
+            "id": "rent",
+            "term": "월세 65만 원 · 매월 25일",
+            "role": "",
+            "parent": "money",
+            "def": {
+              "p": 2,
+              "quote": "월 차임 금 육십오만 원"
+            },
+            "match": [
+              "차임",
+              "육십오만 원"
+            ]
+          },
+          {
+            "id": "fee",
+            "term": "관리비 10만 원",
+            "role": "항목 미정",
+            "parent": "money",
+            "def": {
+              "p": 4,
+              "quote": "관리비 항목은"
+            },
+            "match": [
+              "관리비"
+            ]
+          },
+          {
+            "id": "period",
+            "term": "기간",
+            "role": "분류",
+            "parent": null,
+            "def": null,
+            "match": []
+          },
+          {
+            "id": "term",
+            "term": "2년 (2027.3.1-2029.2.28)",
+            "role": "",
+            "parent": "period",
+            "def": {
+              "p": 3,
+              "quote": "2년으로 한다"
+            },
+            "match": [
+              "2년",
+              "2029년 2월 28일"
+            ]
+          },
+          {
+            "id": "guard",
+            "term": "보증금을 지키는 조항",
+            "role": "가장 중요",
+            "parent": null,
+            "def": null,
+            "match": []
+          },
+          {
+            "id": "movein",
+            "term": "전입신고 시점",
+            "role": "확인 필요",
+            "parent": "guard",
+            "def": {
+              "p": 9,
+              "quote": "전입신고를"
+            },
+            "match": [
+              "전입신고"
+            ]
+          },
+          {
+            "id": "return",
+            "term": "보증금 반환 30일",
+            "role": "확인 필요",
+            "parent": "guard",
+            "def": {
+              "p": 8,
+              "quote": "보증금을 반환한다"
+            },
+            "match": [
+              "30일 이내"
+            ]
+          },
+          {
+            "id": "cancel",
+            "term": "해지 조건 (2회 연체)",
+            "role": "확인 필요",
+            "parent": "guard",
+            "def": {
+              "p": 6,
+              "quote": "차임을 2회 이상"
+            },
+            "match": [
+              "2회 이상 연체"
+            ]
+          },
+          {
+            "id": "burden",
+            "term": "임차인 부담",
+            "role": "분류",
+            "parent": null,
+            "def": null,
+            "match": []
+          },
+          {
+            "id": "repair",
+            "term": "수선",
+            "role": "협의",
+            "parent": "burden",
+            "def": {
+              "p": 5,
+              "quote": "사소한 수선"
+            },
+            "match": [
+              "수선"
+            ]
+          },
+          {
+            "id": "restore",
+            "term": "원상복구 · 도배장판",
+            "role": "협의",
+            "parent": "burden",
+            "def": {
+              "p": 7,
+              "quote": "원상복구하고"
+            },
+            "match": [
+              "원상복구",
+              "도배·장판"
+            ]
+          }
+        ],
+        "links": [
+          {
+            "from": "movein",
+            "to": "deposit",
+            "label": "보증금 순위"
+          },
+          {
+            "from": "return",
+            "to": "deposit",
+            "label": "돌려받는 시점"
+          },
+          {
+            "from": "cancel",
+            "to": "rent",
+            "label": "연체 기준"
+          }
+        ]
+      }
     }
   }
 });

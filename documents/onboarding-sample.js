@@ -174,7 +174,152 @@ window.NL_DOCS.push({
             }
           ]
         }
-      ]
+      ],
+      "concepts": {
+        "topic": "신입 첫 주",
+        "nodes": [
+          {
+            "id": "ship",
+            "term": "코드 내보내기",
+            "role": "절차",
+            "parent": null,
+            "def": null,
+            "match": []
+          },
+          {
+            "id": "pr",
+            "term": "PR · 리뷰 두 명",
+            "role": "1단계",
+            "parent": "ship",
+            "def": {
+              "p": 3,
+              "quote": "코드는 PR로만"
+            },
+            "match": [
+              "PR",
+              "리뷰어"
+            ]
+          },
+          {
+            "id": "owner",
+            "term": "코드 오너",
+            "role": "리뷰어 중 한 명",
+            "parent": "pr",
+            "def": {
+              "p": 3,
+              "quote": "리뷰어 두 명의 승인"
+            },
+            "match": [
+              "코드 오너"
+            ]
+          },
+          {
+            "id": "bbang",
+            "term": "빵틀 (배포 도구)",
+            "role": "2단계",
+            "parent": "ship",
+            "def": {
+              "p": 4,
+              "quote": "배포는 빵틀에서"
+            },
+            "match": [
+              "빵틀"
+            ]
+          },
+          {
+            "id": "staging",
+            "term": "스테이징 30분",
+            "role": "빵틀 안의 단계",
+            "parent": "bbang",
+            "def": {
+              "p": 4,
+              "quote": "스테이징에서 30분"
+            },
+            "match": [
+              "스테이징"
+            ]
+          },
+          {
+            "id": "friday",
+            "term": "금요일 오후 4시 이후 금지",
+            "role": "규칙",
+            "parent": "ship",
+            "def": {
+              "p": 3,
+              "quote": "금요일 오후 4시"
+            },
+            "match": [
+              "금요일 오후 4시"
+            ]
+          },
+          {
+            "id": "oncall",
+            "term": "온콜",
+            "role": "역할",
+            "parent": null,
+            "def": {
+              "p": 4,
+              "quote": "핫픽스는 예외로"
+            },
+            "match": [
+              "온콜"
+            ]
+          },
+          {
+            "id": "hotfix",
+            "term": "핫픽스 예외",
+            "role": "예외",
+            "parent": "oncall",
+            "def": {
+              "p": 4,
+              "quote": "핫픽스는 예외로"
+            },
+            "match": [
+              "핫픽스"
+            ]
+          },
+          {
+            "id": "incident",
+            "term": "장애 대응",
+            "role": "절차",
+            "parent": null,
+            "def": {
+              "p": 5,
+              "quote": "장애가 나면"
+            },
+            "match": [
+              "장애",
+              "되돌리기"
+            ]
+          },
+          {
+            "id": "leave",
+            "term": "휴가 (플렉스)",
+            "role": "절차",
+            "parent": null,
+            "def": {
+              "p": 6,
+              "quote": "휴가는 플렉스에서"
+            },
+            "match": [
+              "휴가",
+              "플렉스"
+            ]
+          }
+        ],
+        "links": [
+          {
+            "from": "hotfix",
+            "to": "staging",
+            "label": "건너뜀"
+          },
+          {
+            "from": "leave",
+            "to": "oncall",
+            "label": "겹치면 교대"
+          }
+        ]
+      }
     }
   }
 });

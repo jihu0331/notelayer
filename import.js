@@ -182,7 +182,7 @@
     const { doc, templateId, template: t } = window.NL.current();
     const needTr = doc.lang !== "ko" && !doc.blocks.every((b) => b.tr);
     const labels = Object.keys(t.boxes);
-    const shape = `{"marks":[{"p":1,"kind":"circle","quote":"원문 그대로"}],"boxes":[{"p":1,"label":"${labels[0]}","text":"설명","pre":"(선택) 글자 그림","answer":"(선택) 답"}],"outline":[{"title":"묶음 제목","items":[{"p":1,"quote":"그 문장 안의 원문 글자 그대로 일부"}]}]${needTr ? ',"translations":[{"p":1,"text":"한국어 번역"}]' : ""}}`;
+    const shape = `{"marks":[{"p":1,"kind":"circle","quote":"원문 그대로"}],"boxes":[{"p":1,"label":"${labels[0]}","text":"설명","pre":"(선택) 글자 그림","answer":"(선택) 답"}],"outline":[{"title":"묶음 제목","items":[{"p":1,"quote":"그 문장 안의 원문 글자 그대로 일부"}]}],"concepts":{"topic":"문서 주제","nodes":[{"id":"a","term":"개념 이름","role":"문제/해결책/구성 요소 등","parent":null,"def":{"p":1,"quote":"정의 문장 안의 원문 글자 그대로 일부"},"match":["본문에 나오는 낱말 그대로"]},{"id":"b","term":"하위 개념","role":"구성 요소","parent":"a","def":{"p":2,"quote":"…"},"match":["…"]}],"links":[{"from":"b","to":"a","label":"해결"}]}${needTr ? ',"translations":[{"p":1,"text":"한국어 번역"}]' : ""}}`;
     return [
       "너는 notelayer 의 표시와 설명을 만든다. notelayer 는 원문을 고치지 않고 그 위에 표시·설명 층을 얹어 보여 준다.",
       `아래 문서에 「${t.name}」 템플릿을 적용해서, 다른 말 없이 JSON 하나만 돌려줘.`,
@@ -200,7 +200,8 @@
       "3. 설명(boxes)은 한두 문장. 더 필요하면 pre 에 글자 그림이나 비교를 넣는다.",
       "4. 확실하지 않은 사실·숫자·조문·명령어는 쓰지 않는다. HTML 은 쓰지 않는다. 설명은 한국어로 쓴다.",
       "5. outline 은 요약본의 구조다. 표시한 문장들을 이해하기 쉬운 순서(먼저 알아야 할 것 → 핵심 → 주의할 것 등)로 3-6개 묶음에 나눈다. 묶음마다 짧은 한국어 제목을 달고, items 의 quote 는 그 문단 안의 원문 글자 그대로 일부로 한다(그 문장 전체가 요약에 들어간다). 표시를 단 문장은 빠짐없이 어딘가에 넣고, 흐름을 잇는 데 꼭 필요하면 표시 없는 문장을 더해도 된다.",
-      ...(needTr ? ["6. 원문이 한국어가 아니므로 translations 에 문단마다 자연스러운 한국어 번역을 넣는다."] : []),
+      "6. concepts 는 개념 구조도다. 문서의 주요 개념을 5-14개 고르고, 어떤 개념의 하위 개념·구성 요소면 parent 에 그 개념의 id 를, 같은 높이(동등)면 같은 parent 를 준다. 맨 위 개념은 parent 를 null 로 둔다. 여러 개념을 묶는 분류 개념(def 없음)을 만들어도 된다. 위아래가 아닌 관계(해결, 원인, 대비, 전제 등)는 links 에 짧은 label 로 쓴다. def.quote 는 그 개념을 설명하는 문장 안의 원문 글자 그대로 일부, match 는 본문에서 그 개념을 가리키는 낱말을 원문 표기 그대로 적는다.",
+      ...(needTr ? ["7. 원문이 한국어가 아니므로 translations 에 문단마다 자연스러운 한국어 번역을 넣는다."] : []),
       "",
       `돌려줄 모양: ${shape}`,
       "",
@@ -247,6 +248,7 @@
     const r = window.NL.applyAnnotations(result);
     const parts = [`표시 ${r.marks}개, 설명 ${r.boxes}개를 얹었습니다`];
     if (r.outline) parts.push(`요약 묶음 ${r.outline}개`);
+    if (r.concepts) parts.push(`개념 ${r.concepts}개`);
     if (r.translated) parts.push(`번역 ${r.translated}문단`);
     if (r.lost.length) parts.push(`원문과 글자가 달라 뺀 표시 ${r.lost.length}개: ${r.lost.slice(0, 5).map((q) => `“${q}”`).join(", ")}${r.lost.length > 5 ? " …" : ""}`);
     $("aiMsg").textContent = parts.join(" · ");

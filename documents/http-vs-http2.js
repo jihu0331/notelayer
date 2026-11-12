@@ -194,7 +194,183 @@ window.NL_DOCS.push({
             }
           ]
         }
-      ]
+      ],
+      "concepts": {
+        "topic": "HTTP/1.1 → HTTP/2",
+        "nodes": [
+          {
+            "id": "hol",
+            "term": "HOL 블로킹",
+            "role": "문제",
+            "parent": null,
+            "def": {
+              "p": 1,
+              "quote": "앞의 응답이 늦어지면"
+            },
+            "match": [
+              "HOL 블로킹",
+              "Head-of-Line Blocking"
+            ]
+          },
+          {
+            "id": "hol-http",
+            "term": "HTTP 층 HOL 블로킹",
+            "role": "종류",
+            "parent": "hol",
+            "def": {
+              "p": 5,
+              "quote": "HTTP 층의 HOL 블로킹은"
+            },
+            "match": [
+              "HTTP 층의 HOL 블로킹"
+            ]
+          },
+          {
+            "id": "hol-tcp",
+            "term": "TCP 층 HOL 블로킹",
+            "role": "종류",
+            "parent": "hol",
+            "def": {
+              "p": 5,
+              "quote": "패킷 하나가 사라지면"
+            },
+            "match": [
+              "TCP 층의 HOL 블로킹",
+              "패킷 하나가 사라지면"
+            ]
+          },
+          {
+            "id": "h1fix",
+            "term": "HTTP/1.1 의 대응",
+            "role": "임시 방편",
+            "parent": null,
+            "def": null,
+            "match": []
+          },
+          {
+            "id": "multi",
+            "term": "연결 여러 개",
+            "role": "대응",
+            "parent": "h1fix",
+            "def": {
+              "p": 2,
+              "quote": "도메인 하나에 연결을 여러 개 열었다"
+            },
+            "match": [
+              "연결을 여러 개"
+            ]
+          },
+          {
+            "id": "pipe",
+            "term": "파이프라이닝",
+            "role": "대응",
+            "parent": "h1fix",
+            "def": {
+              "p": 2,
+              "quote": "파이프라이닝이라는 방식도"
+            },
+            "match": [
+              "파이프라이닝"
+            ]
+          },
+          {
+            "id": "mux",
+            "term": "멀티플렉싱",
+            "role": "해결책",
+            "parent": null,
+            "def": {
+              "p": 3,
+              "quote": "하나의 TCP 연결 위에서"
+            },
+            "match": [
+              "멀티플렉싱"
+            ]
+          },
+          {
+            "id": "frame",
+            "term": "프레임",
+            "role": "구성 요소",
+            "parent": "mux",
+            "def": {
+              "p": 3,
+              "quote": "메시지를 프레임이라는"
+            },
+            "match": [
+              "프레임"
+            ]
+          },
+          {
+            "id": "stream",
+            "term": "스트림",
+            "role": "구성 요소",
+            "parent": "mux",
+            "def": {
+              "p": 3,
+              "quote": "받는 쪽은 스트림 번호를"
+            },
+            "match": [
+              "스트림"
+            ]
+          },
+          {
+            "id": "hpack",
+            "term": "HPACK",
+            "role": "헤더 압축",
+            "parent": null,
+            "def": {
+              "p": 4,
+              "quote": "HPACK이라는 방식으로"
+            },
+            "match": [
+              "HPACK"
+            ]
+          },
+          {
+            "id": "quic",
+            "term": "QUIC (HTTP/3)",
+            "role": "다음 해결책",
+            "parent": null,
+            "def": {
+              "p": 5,
+              "quote": "HTTP/3는 UDP 위의 QUIC"
+            },
+            "match": [
+              "QUIC",
+              "HTTP/3"
+            ]
+          },
+          {
+            "id": "alpn",
+            "term": "ALPN",
+            "role": "사용 조건",
+            "parent": null,
+            "def": {
+              "p": 6,
+              "quote": "ALPN이라는 확장으로"
+            },
+            "match": [
+              "ALPN"
+            ]
+          }
+        ],
+        "links": [
+          {
+            "from": "hol-http",
+            "to": "mux",
+            "label": "해결"
+          },
+          {
+            "from": "hol-tcp",
+            "to": "quic",
+            "label": "해결"
+          },
+          {
+            "from": "pipe",
+            "to": "hol",
+            "label": "못 풂"
+          }
+        ]
+      }
     },
     "tech": {
       "marks": [
@@ -338,7 +514,172 @@ window.NL_DOCS.push({
             }
           ]
         }
-      ]
+      ],
+      "concepts": {
+        "topic": "HTTP/2 를 읽기 위한 개념",
+        "nodes": [
+          {
+            "id": "cost",
+            "term": "연결 하나를 여는 비용",
+            "role": "먼저 알 것",
+            "parent": null,
+            "def": {
+              "p": 2,
+              "quote": "하지만 연결마다 TCP 핸드셰이크"
+            },
+            "match": [
+              "연결마다"
+            ]
+          },
+          {
+            "id": "tcp-hs",
+            "term": "TCP 핸드셰이크",
+            "role": "구성 요소",
+            "parent": "cost",
+            "def": {
+              "p": 2,
+              "quote": "하지만 연결마다 TCP 핸드셰이크"
+            },
+            "match": [
+              "TCP 핸드셰이크"
+            ]
+          },
+          {
+            "id": "tls",
+            "term": "TLS 협상",
+            "role": "구성 요소",
+            "parent": "cost",
+            "def": {
+              "p": 2,
+              "quote": "하지만 연결마다 TCP 핸드셰이크"
+            },
+            "match": [
+              "TLS 협상",
+              "TLS 핸드셰이크"
+            ]
+          },
+          {
+            "id": "unit",
+            "term": "HTTP/2 의 전송 단위",
+            "role": "핵심",
+            "parent": null,
+            "def": {
+              "p": 3,
+              "quote": "HTTP/2는 하나의 TCP 연결 위에서"
+            },
+            "match": [
+              "하나의 TCP 연결"
+            ]
+          },
+          {
+            "id": "frame",
+            "term": "프레임",
+            "role": "가장 작은 단위",
+            "parent": "unit",
+            "def": {
+              "p": 3,
+              "quote": "메시지를 프레임이라는"
+            },
+            "match": [
+              "프레임"
+            ]
+          },
+          {
+            "id": "stream",
+            "term": "스트림",
+            "role": "논리적 통로",
+            "parent": "unit",
+            "def": {
+              "p": 3,
+              "quote": "받는 쪽은 스트림 번호를"
+            },
+            "match": [
+              "스트림"
+            ]
+          },
+          {
+            "id": "hpack",
+            "term": "헤더 압축 (HPACK)",
+            "role": "핵심",
+            "parent": null,
+            "def": {
+              "p": 4,
+              "quote": "한 번 보낸 헤더는"
+            },
+            "match": [
+              "HPACK",
+              "헤더"
+            ]
+          },
+          {
+            "id": "tcp-limit",
+            "term": "TCP 위의 한계",
+            "role": "주의",
+            "parent": null,
+            "def": {
+              "p": 5,
+              "quote": "패킷 하나가 사라지면"
+            },
+            "match": [
+              "패킷 하나가 사라지면"
+            ]
+          },
+          {
+            "id": "quic",
+            "term": "UDP · QUIC (HTTP/3)",
+            "role": "다음 단계",
+            "parent": "tcp-limit",
+            "def": {
+              "p": 5,
+              "quote": "HTTP/3는 UDP 위의 QUIC"
+            },
+            "match": [
+              "UDP",
+              "QUIC",
+              "HTTP/3"
+            ]
+          },
+          {
+            "id": "https",
+            "term": "HTTPS 필수",
+            "role": "사용 조건",
+            "parent": null,
+            "def": {
+              "p": 6,
+              "quote": "브라우저에서는 보안 연결"
+            },
+            "match": [
+              "HTTPS",
+              "보안 연결"
+            ]
+          },
+          {
+            "id": "alpn",
+            "term": "ALPN",
+            "role": "협상 방법",
+            "parent": "https",
+            "def": {
+              "p": 6,
+              "quote": "ALPN이라는 확장으로"
+            },
+            "match": [
+              "ALPN"
+            ]
+          }
+        ],
+        "links": [
+          {
+            "from": "unit",
+            "to": "cost",
+            "label": "연결 수를 줄임"
+          },
+          {
+            "from": "tcp-limit",
+            "to": "quic",
+            "label": "해결"
+          }
+        ]
+      }
     }
   }
 });
