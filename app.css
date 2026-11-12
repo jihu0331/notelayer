@@ -328,3 +328,10 @@ article .box.dim { opacity: .25; }
 /* 요약 안의 문장·정의는 누르는 곳이 아니다(이동 기능 뺌) */
 .side .sum-sec .sent, .cmap .cm-def { cursor: default; }
 .side .sum-sec .sent:hover { background: transparent; color: #374151; }
+
+/* 갈래 시작점의 관계 표시(구성 요소·종류 등)와 해결 화살표 */
+.cmap ul.labeled { position: relative; }
+.cmap .cm-branch { position: relative; z-index: 1; display: inline-block; margin: 2px 0 0 -8px; padding: 0 8px; border: 1px solid #e5e7eb;
+  border-radius: 999px; background: #fff; font: 500 11px/1.7 var(--ui); color: #6b7280; }
+.cmap .cm-link.cm-arrow { border: 0; background: transparent; padding: 1px 2px; font: 600 13px var(--ui); color: #b45309; }
+.cmap .cm-link.cm-arrow:hover { text-decoration: underline; }

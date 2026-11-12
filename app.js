@@ -481,18 +481,32 @@ function startNotelayer() {
     const map = el("div", "cmap");
     map.append(el("div", "cm-topic", c.topic || cur().d.title));
     const drawn = new Set();
+    // 한 갈래를 그린다. 맨 위 개념은 역할을 이름 옆에 달고,
+    // 하위 개념은 역할(구성 요소·종류 등)을 갈래가 시작되는 지점에 한 번만 단다 — 같은 역할끼리 한 갈래로 묶는다
     const branch = (pid) => {
-      const ul = el("ul");
-      for (const n of c.nodes.filter((x) => parentOf(x) === pid)) {
-        if (drawn.has(n.id)) continue; // 관계가 꼬여 있어도 한 번만 그린다
-        drawn.add(n.id);
-        ul.append(nodeEl(n, c));
-        const kids = branch(n.id);
-        if (kids.childElementCount) ul.lastChild.append(kids);
+      const kids = c.nodes.filter((x) => parentOf(x) === pid && !drawn.has(x.id));
+      const groups = [];
+      for (const n of kids) {
+        const role = pid ? (n.role ?? "") : null;
+        const g = pid ? groups.find((x) => x.role === role) : groups[0];
+        if (g) g.nodes.push(n); else groups.push({ role, nodes: [n] });
       }
-      return ul;
+      const out = [];
+      for (const g of groups) {
+        const ul = el("ul");
+        if (g.role) { ul.classList.add("labeled"); ul.append(el("div", "cm-branch", g.role)); }
+        for (const n of g.nodes) {
+          if (drawn.has(n.id)) continue; // 관계가 꼬여 있어도 한 번만 그린다
+          drawn.add(n.id);
+          const li = nodeEl(n, c, !pid);
+          for (const sub of branch(n.id)) li.append(sub);
+          ul.append(li);
+        }
+        out.push(ul);
+      }
+      return out;
     };
-    map.append(branch(null));
+    map.append(...branch(null));
     // 관계가 꼬여 아무 데도 못 붙은 개념은 맨 아래에
     const lost = c.nodes.filter((n) => !drawn.has(n.id));
     if (lost.length) { const ul = el("ul"); for (const n of lost) ul.append(nodeEl(n, c)); map.append(ul); }
@@ -501,18 +515,20 @@ function startNotelayer() {
       ? "개념 관계 정보가 없어 핵심어만 나란히 두었습니다. \"AI 표시 만들기\"로 관계(하위·동등·해결 등)를 받을 수 있습니다."
       : "개념 이름과 관계는 AI 가 정한 것이고, 정의 문장만 원문 그대로입니다. 개념을 누르면 본문에서 그 개념이 나오는 자리만 강조됩니다(화면은 움직이지 않습니다). 수정 모드에서 상위 개념과 역할을 바꿀 수 있습니다."));
   }
-  function nodeEl(n, c) {
+  function nodeEl(n, c, showRole = true) {
     const li = el("li");
     const row = el("div", "cm-row");
     const btn = el("button", `cm-node${ui.concept === n.id ? " sel" : ""}`);
     btn.append(el("span", "cm-term", n.term));
-    if (n.role) btn.append(el("span", "cm-role", n.role));
+    if (showRole && n.role) btn.append(el("span", "cm-role", n.role));
     btn.onclick = () => selectConcept(n.id);
     row.append(btn);
     for (const l of (c.links ?? []).filter((x) => x.from === n.id)) {
       const to = c.nodes.find((x) => x.id === l.to);
       if (!to) continue;
-      const chip = el("button", "cm-link", `${l.label} → ${to.term}`);
+      // 문제 → 해결책은 말 없이 화살표로, 그 밖의 관계는 "관계 → 대상" 꼬리표로
+      const solves = /^해결/.test(l.label);
+      const chip = el("button", solves ? "cm-link cm-arrow" : "cm-link", solves ? `→ ${to.term}` : `${l.label} → ${to.term}`);
       chip.title = `「${to.term}」 으로 가기`;
       chip.onclick = () => selectConcept(to.id);
       row.append(chip);
