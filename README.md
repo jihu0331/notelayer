@@ -2,6 +2,8 @@
 
 **어떤 자료든, 원문은 그대로 두고 그 위에 이해를 쌓는다.**
 
+**바로 써 보기 → https://jihu0331.github.io/notelayer/**
+
 notelayer 는 글 위에 표시(동그라미·형광펜·물결 밑줄)와 설명 상자, 번역, 내 메모를 **층**으로 얹어 읽는 문서 보기입니다.
 같은 원문이라도 목적에 맞는 **템플릿**을 고르면 다른 디자인, 다른 표시, 다른 설명으로 다시 그려집니다.
 
@@ -30,10 +32,11 @@ notelayer 는 글 위에 표시(동그라미·형광펜·물결 밑줄)와 설�
 
 ## 써 보기
 
-설치할 것이 없습니다. 저장소를 내려받아 `index.html` 을 브라우저(크롬 계열 권장)로 열면 예시 문서 다섯 개가 보입니다.
+설치할 것이 없습니다. [공개 데모](https://jihu0331.github.io/notelayer/)를 열거나, 저장소를 내려받아 `index.html` 을 브라우저(크롬 계열 권장)로 열면 예시 문서 다섯 개가 보입니다.
+내 자료를 넣어 쓰려면 내려받아 쓰는 쪽이 편합니다.
 
 ```
-git clone https://github.com/OWNER/notelayer.git
+git clone https://github.com/jihu0331/notelayer.git
 # notelayer/index.html 을 브라우저로 열기
 ```
 
