@@ -394,28 +394,6 @@ function startNotelayer() {
   }
 
   // ── 오른쪽 요약 = 개념 구조도. 추가 설명은 본문의 설명 상자(LLM)가 맡는다 ──
-  // 문장 나누기: 마침표·물음표·느낌표 뒤에 빈칸이 오거나 문단이 끝나는 곳. "HTTP/1.1" 처럼 뒤에 글자가 붙은 점은 넘긴다
-  function sentencesOf(text) {
-    const out = [];
-    let start = 0;
-    for (let i = 0; i < text.length; i++) {
-      if (!/[.!?。]/.test(text[i])) continue;
-      let j = i + 1;
-      while (j < text.length && /["'”’)\]]/.test(text[j])) j++;
-      if (j < text.length && !/\s/.test(text[j])) continue;
-      out.push([start, j]);
-      while (j < text.length && /\s/.test(text[j])) j++;
-      start = j; i = j - 1;
-    }
-    if (start < text.length && text.slice(start).trim()) out.push([start, text.length]);
-    return out;
-  }
-  function sentenceAt(p, offset) {
-    const b = cur().d.blocks.find((x) => x.p === p);
-    if (!b) return null;
-    const s = sentencesOf(b.text).find(([a, z]) => offset >= a && offset < z);
-    return s ? { p, start: s[0], end: s[1], key: `${p}:${s[0]}`, text: b.text.slice(s[0], s[1]) } : null;
-  }
   function renderSummary() {
     const side = $("side");
     const { tpl } = cur();
@@ -536,7 +514,7 @@ function startNotelayer() {
     body.append(map);
     body.append(el("p", "sum-foot", c.source === "auto"
       ? "개념 관계 정보가 없어 핵심어만 나란히 두었습니다. \"AI 표시 만들기\"로 관계(하위·동등·해결 등)를 받을 수 있습니다."
-      : "개념 이름·관계·풀이는 AI 가 쓴 것이라 틀릴 수 있습니다. 개념을 누르면 원문 문장이 함께 보이고, 본문에서 그 개념이 나오는 자리만 강조됩니다. 수정 모드에서 상위 개념과 역할을 바꿀 수 있습니다."));
+      : "개념 이름·관계·풀이는 AI 가 쓴 것이라 틀릴 수 있습니다. 개념을 누르면 핵심 내용이 펼쳐지고, 본문에서 그 개념이 나오는 자리만 강조됩니다. 수정 모드에서 상위 개념과 역할을 바꿀 수 있습니다."));
   }
   function nodeEl(n, c, showRole = true) {
     const li = el("li");
@@ -560,13 +538,12 @@ function startNotelayer() {
     // 한 줄 풀이: 원문을 옮기지 않고 쉬운 말로 쓴 요약(AI 가 쓴 것). 늘 보인다
     if (n.gloss) li.append(el("div", "cm-gloss", n.gloss));
     if (ui.concept === n.id) {
-      // 개념을 고르면 풀이를 확인할 수 있게 원문 문장을 함께 보여 준다
-      const loc = n.def && locate(n.def.p, n.def.quote);
-      const s = loc && sentenceAt(n.def.p, loc.start);
-      if (s) {
-        const def = el("div", "cm-def");
-        def.append(el("span", "cm-def-label", "원문"), document.createTextNode(s.text));
-        li.append(def);
+      // 개념을 고르면 그 개념에 필요한 핵심 내용(2-4줄)을 펼친다. 원문 위치는 본문 강조로 확인한다
+      const points = (n.points ?? []).filter(Boolean);
+      if (points.length) {
+        const ul = el("ul", "cm-points");
+        for (const t of points) ul.append(el("li", null, t));
+        li.append(ul);
       }
       if (ui.editing) li.append(conceptEditor(n));
     }
@@ -935,7 +912,8 @@ function startNotelayer() {
           const match = (Array.isArray(n.match) ? n.match : []).filter((w) => typeof w === "string" && w.trim()).slice(0, 6);
           return { id: String(n.id), term: n.term.trim().slice(0, 60), role: typeof n.role === "string" ? n.role.trim().slice(0, 30) : "",
             parent: n.parent == null || n.parent === "" ? null : String(n.parent), def, match: match.length ? match : [n.term.trim()],
-            gloss: typeof n.gloss === "string" ? n.gloss.trim().slice(0, 80) : "" };
+            gloss: typeof n.gloss === "string" ? n.gloss.trim().slice(0, 80) : "",
+            points: (Array.isArray(n.points) ? n.points : []).filter((t) => typeof t === "string" && t.trim()).map((t) => t.trim().slice(0, 120)).slice(0, 5) };
         });
       const ids = new Set(nodes.map((n) => n.id));
       for (const n of nodes) if (n.parent && (!ids.has(n.parent) || n.parent === n.id)) n.parent = null;

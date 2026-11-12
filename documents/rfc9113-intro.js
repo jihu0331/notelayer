@@ -160,7 +160,12 @@ window.NL_DOCS.push({
               "underlying transport",
               "the transport"
             ],
-            "gloss": "HTTP 아래에서 실제로 데이터를 나르는 계층(여기서는 TCP)"
+            "gloss": "HTTP 아래에서 실제로 데이터를 나르는 계층(여기서는 TCP)",
+            "points": [
+              "HTTP 아래에서 바이트를 실제로 나르는 계층",
+              "HTTP/2 가 다루는 것은 TCP",
+              "성능 문제 대부분이 이 계층을 쓰는 방식에서 나옴"
+            ]
           },
           {
             "id": "problems",
@@ -169,7 +174,11 @@ window.NL_DOCS.push({
             "parent": null,
             "def": null,
             "match": [],
-            "gloss": "HTTP/1.0·1.1 이 가진 성능 문제 두 가지"
+            "gloss": "HTTP/1.0·1.1 이 가진 성능 문제 두 가지",
+            "points": [
+              "① 요청을 동시에 못 보냄 → HOL 블로킹",
+              "② 헤더가 길고 반복됨 → 낭비와 지연"
+            ]
           },
           {
             "id": "hol",
@@ -183,7 +192,11 @@ window.NL_DOCS.push({
             "match": [
               "head-of-line blocking"
             ],
-            "gloss": "앞 요청이 막히면 뒤 요청이 모두 기다리는 현상"
+            "gloss": "앞 요청이 막히면 뒤 요청이 모두 기다리는 현상",
+            "points": [
+              "앞 요청이 막히면 뒤 요청이 모두 대기",
+              "HTTP/1.x 클라이언트가 연결을 여러 개 여는 이유"
+            ]
           },
           {
             "id": "pipe",
@@ -197,7 +210,12 @@ window.NL_DOCS.push({
             "match": [
               "pipelining"
             ],
-            "gloss": "요청을 연달아 보내는 방식. 응답 순서 제약 때문에 절반의 해결"
+            "gloss": "요청을 연달아 보내는 방식. 응답 순서 제약 때문에 절반의 해결",
+            "points": [
+              "응답을 기다리지 않고 요청을 연달아 보냄",
+              "응답은 순서대로만 와야 해서 HOL 블로킹이 남음",
+              "그래서 원문이 '부분적으로만' 해결했다고 씀"
+            ]
           },
           {
             "id": "fields",
@@ -211,7 +229,12 @@ window.NL_DOCS.push({
             "match": [
               "HTTP fields"
             ],
-            "gloss": "요청마다 길고 비슷한 헤더가 반복돼 낭비가 큼"
+            "gloss": "요청마다 길고 비슷한 헤더가 반복돼 낭비가 큼",
+            "points": [
+              "HTTP 필드 = 헤더",
+              "요청마다 비슷한 쿠키·user-agent 가 반복됨",
+              "트래픽 낭비 + 혼잡 윈도를 빨리 채움"
+            ]
           },
           {
             "id": "cwnd",
@@ -225,7 +248,12 @@ window.NL_DOCS.push({
             "match": [
               "congestion window"
             ],
-            "gloss": "TCP 가 확인 없이 한 번에 보낼 수 있는 양. 새 연결에선 작음"
+            "gloss": "TCP 가 확인 없이 한 번에 보낼 수 있는 양. 새 연결에선 작음",
+            "points": [
+              "확인 응답 없이 한 번에 보낼 수 있는 양",
+              "새 연결은 약 14KB(세그먼트 10개)에서 시작해 늘림",
+              "헤더가 이 창을 채우면 왕복을 더 기다림"
+            ]
           },
           {
             "id": "h2",
@@ -239,7 +267,11 @@ window.NL_DOCS.push({
             "match": [
               "HTTP/2"
             ],
-            "gloss": "HTTP 의 의미는 그대로 두고 연결을 쓰는 방식을 바꿈"
+            "gloss": "HTTP 의 의미는 그대로 두고 연결을 쓰는 방식을 바꿈",
+            "points": [
+              "HTTP 의 뜻(메서드·헤더·상태 코드)은 그대로",
+              "연결 위에서 보내는 방식만 바꿈"
+            ]
           },
           {
             "id": "inter",
@@ -253,7 +285,11 @@ window.NL_DOCS.push({
             "match": [
               "interleaving"
             ],
-            "gloss": "같은 연결에서 여러 메시지를 번갈아 끼워 보냄"
+            "gloss": "같은 연결에서 여러 메시지를 번갈아 끼워 보냄",
+            "points": [
+              "여러 메시지를 같은 연결에서 번갈아 끼워 보냄",
+              "HTTP 층 HOL 블로킹을 없앰"
+            ]
           },
           {
             "id": "coding",
@@ -267,7 +303,11 @@ window.NL_DOCS.push({
             "match": [
               "efficient coding"
             ],
-            "gloss": "헤더를 효율적으로 부호화해 크기를 줄임"
+            "gloss": "헤더를 효율적으로 부호화해 크기를 줄임",
+            "points": [
+              "헤더를 효율적으로 부호화(HPACK)",
+              "반복되는 헤더는 번호로 대신 보냄"
+            ]
           },
           {
             "id": "prio",
@@ -281,7 +321,12 @@ window.NL_DOCS.push({
             "match": [
               "prioritization"
             ],
-            "gloss": "중요한 요청을 먼저 끝내게 하는 신호. 이 문서 5.3.2절에서 폐기"
+            "gloss": "중요한 요청을 먼저 끝내게 하는 신호. 이 문서 5.3.2절에서 폐기",
+            "points": [
+              "중요한 요청을 먼저 끝내게 하는 신호",
+              "이 문서 5.3.2절에서 예전 방식은 폐기",
+              "지금은 Priority 헤더(RFC 9218)"
+            ]
           },
           {
             "id": "framing",
@@ -295,7 +340,12 @@ window.NL_DOCS.push({
             "match": [
               "binary message framing"
             ],
-            "gloss": "메시지를 이진 프레임으로 나눠 기계가 빠르게 처리"
+            "gloss": "메시지를 이진 프레임으로 나눠 기계가 빠르게 처리",
+            "points": [
+              "메시지를 이진 프레임으로 나눔",
+              "프레임 머리의 길이를 먼저 읽어 경계를 바로 앎",
+              "글자 줄을 읽는 HTTP/1.1 보다 처리가 빠름"
+            ]
           },
           {
             "id": "limit",
@@ -309,7 +359,11 @@ window.NL_DOCS.push({
             "match": [
               "TCP head-of-line blocking"
             ],
-            "gloss": "TCP 층의 HOL 블로킹은 HTTP/2 로도 남음"
+            "gloss": "TCP 층의 HOL 블로킹은 HTTP/2 로도 남음",
+            "points": [
+              "TCP 는 순서를 지키느라 패킷 하나만 잃어도 뒤가 멈춤",
+              "HTTP/2 의 해결 범위 밖 — 서론이 직접 밝힘"
+            ]
           }
         ],
         "links": [

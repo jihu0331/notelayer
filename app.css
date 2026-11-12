@@ -339,3 +339,11 @@ article .box.dim { opacity: .25; }
 /* 개념 한 줄 풀이(늘 보임)와 고른 개념의 원문 문장 */
 .cmap .cm-gloss { margin: -3px 0 4px 2px; font: 13px/1.55 var(--ui); color: #6b7280; }
 .cmap .cm-def-label { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 999px; background: #fde68a; color: #92400e; font: 600 11px/1.6 var(--ui); vertical-align: 1px; }
+
+/* 고른 개념의 핵심 내용 */
+.cmap .cm-points { margin: 0 0 8px 2px; padding: 8px 12px 8px 26px; border-radius: 8px; background: #fffbeb; border-left: 3px solid #f59e0b; font: 13.5px/1.7 var(--ui); color: #374151; }
+.cmap .cm-points li { margin: 0; padding: 0; }
+.cmap .cm-points li::before, .cmap .cm-points li::after { content: none; border: 0; }
+
+.cmap ul.cm-points { list-style: disc; }
+.cmap .cm-points li::marker { color: #d97706; }
