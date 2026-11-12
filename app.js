@@ -24,16 +24,39 @@ function startNotelayer() {
   const withIds = (list) => (list ?? []).map((x) => ({ id: uid(), ...structuredClone(x) }));
 
   // 문서별 상태: 템플릿별 표시·설명(고친 내용 포함)과 내 메모. 이 브라우저에만 저장한다
+  // 문서 파일 속 표시·설명 데이터의 지문. 문서 파일이 바뀌면 지문도 바뀐다
+  function signature(a) {
+    const str = JSON.stringify(a ?? null);
+    let h = 0;
+    for (let i = 0; i < str.length; i++) h = (Math.imul(h, 31) + str.charCodeAt(i)) | 0;
+    return `${str.length}:${h}`;
+  }
+  function freshAnn(a) {
+    return { marks: withIds(a.marks), boxes: withIds(a.boxes), concepts: a.concepts ? structuredClone(a.concepts) : null, sig: signature(a) };
+  }
   function freshDocState(d) {
     const ann = {};
-    for (const [t, a] of Object.entries(d.annotations)) ann[t] = { marks: withIds(a.marks), boxes: withIds(a.boxes), concepts: a.concepts ? structuredClone(a.concepts) : null };
+    for (const [t, a] of Object.entries(d.annotations)) ann[t] = freshAnn(a);
     return { ann, memos: withIds(d.memos) };
   }
+  // 저장된 상태를 읽되, 문서 파일의 데이터가 그 뒤에 바뀐 템플릿은 새 데이터로 갈아 끼운다.
+  // 이때 내가 단 표시·메모·번역 고침은 그대로 남기고, AI 가 만든 표시·설명·개념만 새것으로 바꾼다
   function loadState() {
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem(STORE)); } catch {}
     const s = {};
-    for (const d of DOCS) s[d.id] = saved?.[d.id]?.ann ? saved[d.id] : freshDocState(d);
+    for (const d of DOCS) {
+      const old = saved?.[d.id];
+      if (!old?.ann) { s[d.id] = freshDocState(d); continue; }
+      for (const [t, a] of Object.entries(d.annotations ?? {})) {
+        const prev = old.ann[t];
+        if (prev && prev.sig === signature(a)) continue;
+        const next = freshAnn(a);
+        if (prev) next.marks.push(...(prev.marks ?? []).filter((m) => m.by === "me"));
+        old.ann[t] = next;
+      }
+      s[d.id] = old;
+    }
     return s;
   }
   function save() { try { localStorage.setItem(STORE, JSON.stringify(state)); } catch {} }
