@@ -67,8 +67,19 @@
   }
   const counts = (data) => ({ marks: Array.isArray(data?.marks) ? data.marks.length : 0, boxes: Array.isArray(data?.boxes) ? data.boxes.length : 0 });
 
+  // 로컬 시험 서버(localhost)에서만: 시험용 즐겨찾기가 표시 층 코드를 달라고 하면 이 창이 자기 서버에서 읽어 넘겨준다.
+  // 블로그 페이지가 localhost 에서 직접 파일을 받으면 크롬이 사이트마다 「로컬 네트워크 액세스」 허락을 요구하지만,
+  // 따로 연 창끼리 주고받는 것은 허락이 필요 없다. 넘겨주는 것은 공개된 앱 코드뿐이다
+  const DEV = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+  const devCode = async () => (await Promise.all(["templates.js", "prompt.js", "overlay.js"]
+    .map((f) => fetch(`${f}?v=${Date.now()}`, { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(f); return r.text(); })))).join("\n;\n");
+
   window.addEventListener("message", async (e) => {
     const d = e.data;
+    if (d?.nl === "dev-code-req") {
+      if (DEV && window.opener && e.source === window.opener) devCode().then((code) => e.source.postMessage({ nl: "dev-code", code }, e.origin)).catch(() => {});
+      return;
+    }
     if (!d || d.nl !== "page" || !window.opener || e.source !== window.opener) return;
     const reply = (msg) => e.source.postMessage({ nl: "store", id: d.id, ...msg }, e.origin);
     if (typeof d.key !== "string" || !sameOrigin(d.key, e.origin)) { reply({ type: "error", message: "요청한 주소가 이 페이지의 주소와 맞지 않습니다" }); return; }

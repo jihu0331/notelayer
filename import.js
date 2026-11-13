@@ -160,14 +160,23 @@
   const isLocal = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
   const storeName = isLocal ? "notelayer-store-dev" : "notelayer-store";
   if (isLocal) $("overlayBookmarklet").textContent = "이 페이지 위에 표시하기 (시험용)";
-  const overlayCode = `(()=>{if(window.NL_OVERLAY){window.NL_OVERLAY.toggle();return}const B=${JSON.stringify(base)};`
-    + `try{window.__NL_STORE_WIN=window.open(B+'store.html','${storeName}','popup=yes,width=380,height=560,left='+Math.max(0,screen.availWidth-400)+',top=60')}catch(e){}`
-    + "const L=f=>new Promise((ok,no)=>{const s=document.createElement('script');s.src=B+f+'?v='+Date.now();s.onload=ok;s.onerror=()=>no(f);document.head.appendChild(s)});"
-    + "L('templates.js').then(()=>L('prompt.js')).then(()=>L('overlay.js'))"
-    + (isLocal
-      // 시험용: 막히는 원인은 대개 서버가 꺼져 있거나, 크롬이 이 사이트의 로컬 네트워크 접근을 허락받지 못한 것이다
-      ? ".catch(f=>alert('notelayer 시험 서버의 파일('+f+')을 불러오지 못했습니다.\\n① 시험 서버(node dev/serve.js)가 켜져 있는지\\n② 크롬이 이 사이트에 「로컬 네트워크 액세스」를 허용했는지(주소창 왼쪽 아이콘 → 사이트 설정) 확인해 주세요.'))})()"
-      : ".catch(f=>alert('notelayer 파일('+f+')을 불러오지 못했습니다. 이 사이트의 보안 설정이 외부 스크립트를 막았을 수 있습니다.'))})()");
+  const openStore = `window.open(B+'store.html','${storeName}','popup=yes,width=380,height=560,left='+Math.max(0,screen.availWidth-400)+',top=60')`;
+  const overlayCode = isLocal
+    // 시험용: 페이지가 localhost 에서 직접 파일을 받으면 크롬이 사이트마다 「로컬 네트워크 액세스」 허락을 요구한다.
+    // 그래서 시험용 저장 창(localhost)을 먼저 열고, 그 창이 읽어 넘겨주는 코드를 받아 실행한다(창끼리 주고받기는 허락이 필요 없다)
+    ? `(()=>{if(window.NL_OVERLAY){window.NL_OVERLAY.toggle();return}const B=${JSON.stringify(base)},O=${JSON.stringify(location.origin)};`
+      + `const W=${openStore};`
+      + "if(!W){alert('팝업이 막혀 시험용 저장 창을 열지 못했습니다. 주소창 오른쪽에서 이 사이트의 팝업을 허용해 주세요.');return}"
+      + "window.__NL_STORE_WIN=W;window.NL_BASE=B+'overlay.js';"
+      + "let n=0;const T=setInterval(()=>{if(++n>50){clearInterval(T);removeEventListener('message',H);alert('notelayer 시험 서버에서 코드를 받지 못했습니다. 시험 서버(node dev/serve.js)가 켜져 있는지 확인해 주세요.');return}try{W.postMessage({nl:'dev-code-req'},O)}catch(e){}},300);"
+      + "function H(e){if(e.origin!==O||e.source!==W||!e.data||e.data.nl!=='dev-code'||typeof e.data.code!=='string')return;clearInterval(T);removeEventListener('message',H);"
+      + "try{(0,eval)(e.data.code)}catch(x){const s=document.createElement('script');s.textContent=e.data.code;document.head.appendChild(s)}}"
+      + "addEventListener('message',H)})()"
+    : `(()=>{if(window.NL_OVERLAY){window.NL_OVERLAY.toggle();return}const B=${JSON.stringify(base)};`
+      + `try{window.__NL_STORE_WIN=${openStore}}catch(e){}`
+      + "const L=f=>new Promise((ok,no)=>{const s=document.createElement('script');s.src=B+f+'?v='+Date.now();s.onload=ok;s.onerror=()=>no(f);document.head.appendChild(s)});"
+      + "L('templates.js').then(()=>L('prompt.js')).then(()=>L('overlay.js'))"
+      + ".catch(f=>alert('notelayer 파일('+f+')을 불러오지 못했습니다. 이 사이트의 보안 설정이 외부 스크립트를 막았을 수 있습니다.'))})()";
   $("overlayBookmarklet").href = `javascript:${encodeURIComponent(overlayCode)}`;
   $("overlayBookmarklet").onclick = $("bookmarklet").onclick;
 
