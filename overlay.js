@@ -2,6 +2,8 @@
 // 원래 페이지의 글자와 디자인은 고치지 않는다.
 // - 형광펜·물결: 브라우저의 글자 범위 칠하기(CSS Custom Highlight API). 페이지 구조를 건드리지 않는다
 // - 동그라미·설명 배지·패널: 페이지 위에 겹친 별도 층. Shadow DOM 으로 감싸 페이지 CSS 와 섞이지 않게 한다
+// - 패널은 페이지를 밀지 않는다. 오른쪽 여백을 늘려 밀면 화면에 고정된 사이트 메뉴 밑으로 본문이 깔린다(티스토리에서 확인).
+//   대신 본문 옆 빈자리에 맞춰 놓고, 자리가 모자라면 별도 창으로 떼어 낸다
 (() => {
   if (window.NL_OVERLAY) { window.NL_OVERLAY.toggle(); return; }
   const TEMPLATES = window.NL_TEMPLATES, PROMPT = window.NL_PROMPT;
@@ -16,13 +18,26 @@
     review: { circle: "#15803d", hl: "rgba(134, 239, 172, .45)", wave: "#dc2626" },
   };
   const KINDS = ["circle", "highlight", "wave"];
-  // 패널은 페이지를 밀지 않고 위에 겹쳐 띄운다. 페이지 오른쪽 여백을 늘려 밀면 화면에 고정된 사이트 메뉴 밑으로 본문이 깔린다(티스토리에서 확인)
   const SKIP = "nav,aside,footer,header,form,[role=navigation],[role=complementary],[aria-hidden=true],notelayer-overlay";
   const BLOCK = "p,div,li,ul,ol,dl,dt,dd,table,tr,td,th,pre,blockquote,h1,h2,h3,h4,h5,h6,section,article,figure,figcaption,main";
   const LEAF = "p,div,li,dt,dd,td,th,pre,blockquote,h1,h2,h3,h4,h5,h6,figcaption";
+  // 이 페이지에서 단 표시·고친 내용은 페이지 주소별로 이 브라우저에 저장한다
+  const STORE_KEY = `notelayer:v1:${location.origin}${location.pathname}`;
+  const UI_KEY = "notelayer:ui";
+  const PANEL_MIN = 280, PANEL_MAX = 720;
+  const SVGNS = "http://www.w3.org/2000/svg";
   const squash = (s) => String(s ?? "").replace(/\s+/g, "");
+  const tidy = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
   const textLen = (el) => squash(el.textContent).length;
   const isLeaf = (el) => el.tagName === "PRE" || !el.querySelector(BLOCK);
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  let uidN = 0;
+  const uid = () => `o${Date.now().toString(36)}${(uidN++).toString(36)}`;
+  const store = {
+    get(key) { try { return JSON.parse(localStorage.getItem(key) || "null"); } catch { return null; } },
+    set(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); return true; } catch { return false; } },
+    del(key) { try { localStorage.removeItem(key); } catch {} },
+  };
 
   // ── 본문 고르기: 긴 문단이 몰려 있고 링크 비율이 낮은 영역 (브라우저 읽기 모드와 같은 생각) ──
   function findRoot() {
@@ -55,7 +70,7 @@
       if (el.closest(SKIP) && !root.closest(SKIP)) continue;
       if (el.tagName !== "PRE" && el.closest("pre")) continue;
       if (!isLeaf(el) || !el.getClientRects().length) continue;
-      const text = el.tagName === "PRE" ? el.innerText.trim() : el.innerText.replace(/\s+/g, " ").trim();
+      const text = el.tagName === "PRE" ? el.innerText.trim() : tidy(el.innerText);
       if (text.length < 2) continue;
       out.push({ p: out.length + 1, el, text });
       if (out.length >= 500) break;
@@ -92,21 +107,30 @@
   }
 
   // ── 상태 ──
+  const ui = store.get(UI_KEY) || {};
   const state = {
     tpl: Object.keys(TEMPLATES)[0],
     root: null, paras: [],
-    result: null,
-    ranges: { circle: [], highlight: [], wave: [] },
-    boxes: [],            // { box, el }
-    lost: [],
+    marks: [],            // { id, kind, quote, range, mine }
+    boxes: [],            // { id, label, text, pre, answer, el, mine }
+    concepts: null,
     show: { circle: true, highlight: true, wave: true, boxes: true },
+    editing: false,
+    side: ui.side || null, width: ui.width || null,
+    popup: null,
   };
+  const paraIndexOf = (node) => {
+    const el = node?.nodeType === 1 ? node : node?.parentElement;
+    return el ? state.paras.findIndex((x) => x.el === el || x.el.contains(el)) : -1;
+  };
+  const boxOrder = (b) => state.paras.findIndex((x) => x.el === b.el);
+  const sortedBoxes = () => [...state.boxes].sort((a, b) => boxOrder(a) - boxOrder(b));
 
   // AI 가 매긴 문단 번호(p)를 이 페이지 문단 자리로 옮긴다.
   // 이 층이 만든 요청문으로 받은 답이면 그대로 맞고, 다른 데서 뽑은 글로 만든 답이면 긴 인용으로 어긋난 정도를 배워 바로잡는다
   function anchor(result) {
     const P = state.paras, n = P.length;
-    const clamp = (i) => Math.max(0, Math.min(n - 1, i));
+    const at = (i) => clamp(i, 0, n - 1);
     const findPara = (quote, hint, spread) => {
       const order = [hint];
       for (let d = 1; d <= spread; d++) order.push(hint - d, hint + d);
@@ -114,31 +138,67 @@
       for (let i = 0; i < n; i++) if (rangeIn(P[i].el, quote)) return i;
       return -1;
     };
-    const marks = (Array.isArray(result.marks) ? result.marks : [])
-      .filter((m) => m && KINDS.includes(m.kind) && typeof m.quote === "string" && squash(m.quote) && Number.isFinite(Number(m.p)));
+    const raw = (Array.isArray(result.marks) ? result.marks : [])
+      .filter((m) => m && KINDS.includes(m.kind) && typeof m.quote === "string" && squash(m.quote));
+    const pOf = (m) => (Number.isFinite(Number(m.p)) ? Number(m.p) : 1);
     const learned = [];
-    for (const m of marks) {
+    for (const m of raw) {
       if (squash(m.quote).length < 12) continue;
-      const i = findPara(m.quote, clamp(Number(m.p) - 1), 0);
-      if (i >= 0) learned.push([Number(m.p), i]);
+      const i = findPara(m.quote, at(pOf(m) - 1), 0);
+      if (i >= 0) learned.push([pOf(m), i]);
     }
     const guess = (p) => {
-      if (!learned.length) return clamp(p - 1);
+      if (!learned.length) return at(p - 1);
       let best = learned[0];
       for (const l of learned) if (Math.abs(l[0] - p) < Math.abs(best[0] - p)) best = l;
-      return clamp(p - 1 + (best[1] - (best[0] - 1)));
+      return at(p - 1 + (best[1] - (best[0] - 1)));
     };
-    const ranges = { circle: [], highlight: [], wave: [] }, lost = [];
-    for (const m of marks) {
-      const i = findPara(m.quote, guess(Number(m.p)), 3);
+    const marks = [], lost = [];
+    for (const m of raw) {
+      const i = findPara(m.quote, guess(pOf(m)), 3);
       const r = i >= 0 ? rangeIn(P[i].el, m.quote) : rangeIn(state.root, m.quote); // 문단 경계를 넘는 인용은 본문 전체에서
-      if (r) ranges[m.kind].push(r); else lost.push(m.quote);
+      if (r) marks.push({ id: uid(), kind: m.kind, quote: m.quote, range: r, mine: !!m.mine });
+      else lost.push(m.quote);
     }
     const labels = Object.keys(TEMPLATES[state.tpl].boxes);
     const boxes = (Array.isArray(result.boxes) ? result.boxes : [])
-      .filter((b) => b && typeof b.text === "string" && b.text.trim() && Number.isFinite(Number(b.p)) && n)
-      .map((b) => ({ box: { ...b, label: labels.includes(b.label) ? b.label : labels[0] }, el: P[guess(Number(b.p))].el }));
-    return { ranges, lost, boxes, total: marks.length };
+      .filter((b) => b && typeof b.text === "string" && (b.text.trim() || b.mine) && n)
+      .map((b) => ({
+        id: uid(), label: typeof b.label === "string" && b.label ? b.label : labels[0], text: b.text.trim(),
+        pre: typeof b.pre === "string" && b.pre.trim() ? b.pre : "", answer: typeof b.answer === "string" ? b.answer.trim() : "",
+        el: P[guess(Number.isFinite(Number(b.p)) ? Number(b.p) : 1)].el, mine: !!b.mine,
+      }));
+    return { marks, boxes, lost, total: raw.length };
+  }
+
+  function cleanConcepts(c) {
+    if (!c || !Array.isArray(c.nodes)) return null;
+    const nodes = c.nodes.filter((n) => n && n.id != null && typeof n.term === "string" && n.term.trim())
+      .map((n) => ({ ...n, id: String(n.id), parent: n.parent == null || n.parent === "" ? null : String(n.parent) }));
+    const ids = new Set(nodes.map((n) => n.id));
+    for (const n of nodes) if (n.parent && (!ids.has(n.parent) || n.parent === n.id)) n.parent = null;
+    // 상위 개념이 돌고 도는 관계는 끊는다
+    for (const n of nodes) { const seen = new Set([n.id]); let p = n.parent; while (p) { if (seen.has(p)) { n.parent = null; break; } seen.add(p); p = nodes.find((x) => x.id === p)?.parent; } }
+    const links = (Array.isArray(c.links) ? c.links : []).map((l) => ({ from: String(l?.from), to: String(l?.to), label: tidy(l?.label).slice(0, 24) }))
+      .filter((l) => ids.has(l.from) && ids.has(l.to) && l.from !== l.to && l.label);
+    return nodes.length ? { topic: tidy(c.topic) || document.title, nodes, links } : null;
+  }
+
+  // ── 저장: 고친 결과까지 페이지 주소별로 남긴다. p 는 이 페이지 문단 번호라 다시 열면 그대로 맞는다 ──
+  function serialize() {
+    return {
+      marks: state.marks.map((m) => ({ p: paraIndexOf(m.range.startContainer) + 1 || 1, kind: m.kind, quote: m.quote, ...(m.mine ? { mine: true } : {}) })),
+      boxes: sortedBoxes().map((b) => ({ p: boxOrder(b) + 1 || 1, label: b.label, text: b.text, ...(b.pre ? { pre: b.pre } : {}), ...(b.answer ? { answer: b.answer } : {}), ...(b.mine ? { mine: true } : {}) })),
+      ...(state.concepts ? { concepts: state.concepts } : {}),
+    };
+  }
+  let saveTimer = 0;
+  function save() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      if (!state.marks.length && !state.boxes.length && !state.concepts) { store.del(STORE_KEY); return; }
+      if (!store.set(STORE_KEY, { v: 1, tpl: state.tpl, savedAt: Date.now(), ...serialize() })) setMsg(applyMsg, "이 사이트에서는 저장이 막혀 있어, 새로 고치면 표시가 사라집니다.", true);
+    }, 300);
   }
 
   // ── 그리기 ──
@@ -149,7 +209,6 @@
   host.style.cssText = "all:initial;position:absolute;left:0;top:0;width:0;height:0;z-index:2147483000;";
   document.documentElement.appendChild(host);
   const shadow = host.attachShadow({ mode: "open" });
-  const SVGNS = "http://www.w3.org/2000/svg";
 
   function h(tag, props = {}, ...kids) {
     const el = document.createElement(tag);
@@ -163,32 +222,37 @@
     for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid instanceof Node ? kid : String(kid));
     return el;
   }
+  const svgEl = (tag, attrs = {}) => {
+    const e = document.createElementNS(SVGNS, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    return e;
+  };
 
-  shadow.append(h("style", {}, `
-    :host { all: initial; }
+  // 패널 CSS 는 페이지 안(Shadow DOM)과 떼어 낸 창이 함께 쓴다
+  const PANEL_CSS = `
     * { box-sizing: border-box; }
-    .layer { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
-    .badge { position: absolute; pointer-events: auto; cursor: pointer; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
-      color: #fff; font: 600 11px/20px "Pretendard", "Malgun Gothic", sans-serif; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
-    .badge:hover { transform: scale(1.1); }
-    .root-box { position: absolute; border: 2px dashed #f59e0b; border-radius: 6px; background: rgba(245, 158, 11, .06); }
-    .panel { position: fixed; top: 12px; right: 12px; bottom: 12px; width: 330px; display: flex; flex-direction: column; pointer-events: auto;
+    .panel { position: fixed; top: 12px; bottom: 12px; display: flex; flex-direction: column; pointer-events: auto;
       background: #fff; color: #1f2328; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.18);
       font: 13px/1.6 "Pretendard", "IBM Plex Sans KR", "Malgun Gothic", sans-serif; overflow: hidden; }
     .panel[data-min] { display: none; }
-    .pill { position: fixed; right: 16px; bottom: 16px; pointer-events: auto; cursor: pointer; padding: 8px 14px; border-radius: 999px; border: 0;
-      background: #1f2328; color: #fff; font: 600 12px "Pretendard", "Malgun Gothic", sans-serif; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
-    .pill[hidden] { display: none; }
-    header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #eef0f2; }
-    header b { font-size: 14px; }
+    .panel.popped { position: static; width: auto !important; height: 100vh; border: 0; border-radius: 0; box-shadow: none; }
+    .panel.popped .grip, .panel.popped .dock-only { display: none; }
+    .grip { position: absolute; top: 0; bottom: 0; width: 8px; cursor: ew-resize; z-index: 3; }
+    .grip:hover { background: rgba(99, 102, 241, .15); }
+    header { display: flex; align-items: center; gap: 4px; padding: 8px 10px; border-bottom: 1px solid #eef0f2; }
+    header b { font-size: 14px; margin-right: 2px; }
     header select { flex: 1; min-width: 0; }
+    .edit-bar { display: none; padding: 6px 12px; background: #fff7ed; color: #9a3412; font-size: 12px; border-bottom: 1px solid #fde4c8; }
+    .panel[data-editing] .edit-bar { display: block; }
     .body { overflow: auto; padding: 12px; flex: 1; }
     button, select, textarea { font: inherit; color: inherit; }
     button { cursor: pointer; border: 1px solid #d0d7de; background: #f6f8fa; border-radius: 8px; padding: 5px 10px; }
     button.primary { background: #1f2328; color: #fff; border-color: #1f2328; }
-    button.icon { border: 0; background: none; padding: 2px 6px; font-size: 15px; color: #6b7280; }
+    button.icon { border: 0; background: none; padding: 2px 6px; font-size: 14px; color: #6b7280; border-radius: 6px; }
+    button.icon:hover { background: #f3f4f6; }
+    button.toggle[aria-pressed="true"] { background: #fff7ed; color: #c2410c; }
     .row { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
-    .muted { color: #6b7280; font-size: 12px; margin: 4px 0; }
+    .muted { color: #6b7280; font-size: 12px; margin: 4px 0; white-space: pre-wrap; }
     .msg { font-size: 12px; margin: 6px 0; color: #0f766e; white-space: pre-wrap; word-break: break-all; }
     .msg.err { color: #b42318; }
     h3 { font-size: 12px; margin: 12px 0 4px; color: #374151; }
@@ -198,7 +262,7 @@
     .legend button { font-size: 12px; padding: 3px 8px; border-radius: 999px; }
     .legend button[aria-pressed="false"] { opacity: .4; }
     .sw { display: inline-block; vertical-align: middle; margin-right: 4px; }
-    .sw-circle { width: 16px; height: 11px; border-radius: 50%; border: 2px solid var(--circle); }
+    .sw-circle { width: 18px; height: 11px; border-radius: 999px; border: 2px solid var(--circle); }
     .sw-hl { width: 16px; height: 10px; background: var(--hl); }
     .sw-wave { width: 16px; height: 2px; border-bottom: 2px dotted var(--wave); }
     .tabs { display: flex; gap: 4px; border-bottom: 1px solid #eef0f2; margin: 8px 0; }
@@ -206,70 +270,118 @@
     .tabs button[aria-selected="true"] { border-bottom-color: #1f2328; color: #1f2328; font-weight: 600; }
     .card { border: 1px solid #eef0f2; border-left: 3px solid var(--c); border-radius: 8px; padding: 8px 10px; margin: 8px 0; cursor: pointer; }
     .card:hover { background: #fafbfc; }
+    .panel[data-editing] .card { cursor: default; }
     .card.flash { animation: flash 1.2s; }
     @keyframes flash { from { background: rgba(245, 158, 11, .25); } to { background: transparent; } }
-    .chip { display: inline-block; font-size: 11px; font-weight: 600; color: var(--c); margin-bottom: 2px; }
+    .card-head { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+    .chip { display: inline-block; font-size: 11px; font-weight: 600; color: var(--c); }
+    .card-head select { font-size: 11px; font-weight: 600; color: var(--c); border: 1px solid #e5e7eb; border-radius: 6px; padding: 1px 4px; }
+    .card-head .grow { flex: 1; }
     .card pre { margin: 6px 0 0; padding: 6px 8px; background: #f6f8fa; border-radius: 6px; font: 11.5px/1.5 Consolas, "D2Coding", monospace; white-space: pre; overflow-x: auto; }
     .card details { margin-top: 6px; }
     .card summary { cursor: pointer; color: #9c36b5; font-size: 12px; }
-    .tree, .tree ul { list-style: none; margin: 0; padding-left: 14px; }
-    .tree { padding-left: 0; }
-    .node { margin: 6px 0; }
-    .node .term { cursor: pointer; font-weight: 600; }
-    .node .role { color: #9ca3af; font-size: 11px; margin-left: 4px; font-weight: 400; }
-    .node .gloss { color: #4b5563; font-size: 12px; }
-    .node .points { margin: 4px 0 0; padding-left: 16px; font-size: 12px; color: #374151; }
-    .node .link { font-size: 11px; color: #6b7280; }
-  `));
-  const svg = document.createElementNS(SVGNS, "svg");
-  svg.setAttribute("class", "layer");
+    [contenteditable] { outline: none; border-radius: 4px; }
+    [contenteditable]:focus { box-shadow: 0 0 0 2px rgba(234, 88, 12, .35); }
+    [contenteditable]:empty::before { content: attr(data-ph); color: #9ca3af; }
+    .ans-ed { margin-top: 6px; font-size: 12px; color: #6b21a8; }
+    .map { position: relative; }
+    .map-lines { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 0; }
+    .map-lines .tree { fill: none; stroke: #cbd5e1; stroke-width: 1.5; }
+    .map-lines .rel { fill: none; stroke: #6366f1; stroke-width: 1.4; stroke-dasharray: 4 3; }
+    .map-lines .rel.on { stroke-width: 2.4; stroke-dasharray: none; }
+    .map-lines .arrow { fill: #6366f1; }
+    .mnode { position: relative; z-index: 1; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 5px 8px; margin: 10px 0; }
+    .mnode.topic { display: inline-block; background: #1f2328; color: #fff; border-color: #1f2328; font-weight: 600; font-size: 12px; margin-top: 2px; }
+    .mnode.on { border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99, 102, 241, .2); }
+    .mnode .term { cursor: pointer; font-weight: 600; }
+    .mnode .role { color: #9ca3af; font-size: 11px; margin-left: 4px; font-weight: 400; }
+    .mnode .gloss { color: #4b5563; font-size: 12px; line-height: 1.5; }
+    .mnode .points { margin: 4px 0 0; padding-left: 16px; font-size: 12px; color: #374151; }
+    .rel-label { position: absolute; z-index: 2; font-size: 10.5px; line-height: 1.35; color: #4338ca; background: #eef2ff; border-radius: 6px; padding: 1px 5px; cursor: default; }
+    .rel-label.on { background: #6366f1; color: #fff; }
+  `;
+  shadow.append(h("style", {}, `
+    :host { all: initial; }
+    .layer { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
+    .badge { position: absolute; pointer-events: auto; cursor: pointer; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
+      color: #fff; font: 600 11px/20px "Pretendard", "Malgun Gothic", sans-serif; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+    .badge:hover { transform: scale(1.1); }
+    .root-box { position: absolute; border: 2px dashed #f59e0b; border-radius: 6px; background: rgba(245, 158, 11, .06); }
+    .pill { position: fixed; right: 16px; bottom: 16px; pointer-events: auto; cursor: pointer; padding: 8px 14px; border-radius: 999px; border: 0;
+      background: #1f2328; color: #fff; font: 600 12px "Pretendard", "Malgun Gothic", sans-serif; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+    .pill[hidden] { display: none; }
+    .pop { position: absolute; z-index: 5; pointer-events: auto; display: flex; gap: 2px; padding: 4px; border-radius: 9px; background: #1f2328; color: #fff;
+      font: 12px/1.4 "Pretendard", "Malgun Gothic", sans-serif; box-shadow: 0 6px 18px rgba(0,0,0,.3); white-space: nowrap; }
+    .pop[hidden] { display: none; }
+    .pop button { border: 0; background: none; color: #fff; padding: 4px 8px; border-radius: 6px; cursor: pointer; font: inherit; }
+    .pop button:hover { background: rgba(255,255,255,.15); }
+    .pop button[aria-pressed="true"] { background: rgba(255,255,255,.28); }
+    .pop .sep { width: 1px; background: rgba(255,255,255,.2); margin: 2px 2px; }
+  ` + PANEL_CSS));
+  const layerSvg = svgEl("svg", { class: "layer" });
   const badgeLayer = h("div", { class: "layer" });
-  shadow.append(svg, badgeLayer);
+  const pop = h("div", { class: "pop", hidden: true, onmousedown: (e) => e.preventDefault() });
+  shadow.append(layerSvg, badgeLayer);
 
+  const colors = () => MARK_COLORS[state.tpl] || MARK_COLORS.tech;
   function paint() {
-    const c = MARK_COLORS[state.tpl] || MARK_COLORS.tech;
+    const c = colors();
     pageStyle.textContent = `::highlight(nl-ov-hl){background-color:${c.hl}}
 ::highlight(nl-ov-wave){text-decoration:underline wavy ${c.wave};text-decoration-thickness:1.5px;text-underline-offset:4px}
 ::highlight(nl-ov-flash){background-color:rgba(245,158,11,.4)}`;
     panel.style.setProperty("--circle", c.circle); panel.style.setProperty("--hl", c.hl); panel.style.setProperty("--wave", c.wave);
     if (!window.CSS?.highlights) return;
-    CSS.highlights.set("nl-ov-hl", new Highlight(...(state.show.highlight ? state.ranges.highlight : [])));
-    CSS.highlights.set("nl-ov-wave", new Highlight(...(state.show.wave ? state.ranges.wave : [])));
+    const of = (k) => (state.show[k] ? state.marks.filter((m) => m.kind === k).map((m) => m.range) : []);
+    CSS.highlights.set("nl-ov-hl", new Highlight(...of("highlight")));
+    CSS.highlights.set("nl-ov-wave", new Highlight(...of("wave")));
   }
 
+  // 한 표시가 굵은 글씨·링크처럼 여러 조각에 걸치면 조각마다 네모가 나온다. 같은 줄의 조각은 하나로 합친다
+  function lineRects(range) {
+    const rects = [...range.getClientRects()].filter((r) => r.width > 0.5 && r.height > 0.5).sort((a, b) => a.top - b.top || a.left - b.left);
+    const lines = [];
+    for (const r of rects) {
+      const line = lines.find((l) => Math.min(l.bottom, r.bottom) - Math.max(l.top, r.top) > Math.min(l.bottom - l.top, r.height) * 0.5);
+      if (line) Object.assign(line, { left: Math.min(line.left, r.left), right: Math.max(line.right, r.right), top: Math.min(line.top, r.top), bottom: Math.max(line.bottom, r.bottom) });
+      else lines.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+    }
+    return lines;
+  }
+
+  const panelDocked = () => !state.popup;
   // 동그라미와 배지는 문서 좌표에 그린다. 안쪽 스크롤 영역·글자 크기 변화에 맞춰 다시 그린다
   let raf = 0;
   const queueDraw = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(drawLayer); };
   function drawLayer() {
-    svg.replaceChildren(); badgeLayer.replaceChildren();
+    layerSvg.replaceChildren();
+    for (const b of badgeLayer.querySelectorAll(".badge")) b.remove();
     const sx = window.scrollX, sy = window.scrollY;
-    const c = MARK_COLORS[state.tpl] || MARK_COLORS.tech;
     const hand = TEMPLATES[state.tpl].hand;
-    if (state.show.circle) for (const r of state.ranges.circle) for (const rect of r.getClientRects()) {
-      if (!rect.width) continue;
-      const cx = rect.left + sx + rect.width / 2, cy = rect.top + sy + rect.height / 2;
-      const e = document.createElementNS(SVGNS, "ellipse");
-      e.setAttribute("cx", cx); e.setAttribute("cy", cy);
-      e.setAttribute("rx", rect.width / 2 + 4); e.setAttribute("ry", rect.height / 2 + 1);
-      e.setAttribute("fill", "none"); e.setAttribute("stroke", c.circle);
-      e.setAttribute("stroke-width", hand ? "2.2" : "1.6");
-      if (hand) e.setAttribute("transform", `rotate(-2 ${cx} ${cy})`);
-      svg.append(e);
+    // 동그라미 = 글자를 감싸는 둥근 테두리. 타원은 옆 글자를 파고들어 겹쳐 보였다
+    if (state.show.circle) for (const m of state.marks) {
+      if (m.kind !== "circle") continue;
+      for (const l of lineRects(m.range)) {
+        const x = l.left + sx - 3, y = l.top + sy - 1, w = l.right - l.left + 6, ht = l.bottom - l.top + 2;
+        const e = svgEl("rect", { x, y, width: w, height: ht, rx: Math.min(ht / 2, 10), fill: "none", stroke: colors().circle, "stroke-width": hand ? "2" : "1.6" });
+        if (hand) e.setAttribute("transform", `rotate(-1 ${x + w / 2} ${y + ht / 2})`);
+        layerSvg.append(e);
+      }
     }
     if (!state.show.boxes) return;
-    const colors = TEMPLATES[state.tpl].boxes;
+    const boxColors = TEMPLATES[state.tpl].boxes;
     const groups = new Map();
-    state.boxes.forEach((b, i) => { if (!groups.has(b.el)) groups.set(b.el, []); groups.get(b.el).push(i); });
-    for (const [el, idxs] of groups) {
+    for (const b of sortedBoxes()) { if (!groups.has(b.el)) groups.set(b.el, []); groups.get(b.el).push(b); }
+    // 배지는 패널 반대쪽 여백에 단다
+    const onRight = panelDocked() && state.side === "left";
+    for (const [el, list] of groups) {
       const r = el.getClientRects()[0];
       if (!r) continue;
-      const first = state.boxes[idxs[0]].box;
-      const left = r.left > 34 ? r.left - 28 : r.right + 6;
+      const left = onRight ? r.right + 8 : r.left > 34 ? r.left - 28 : r.right + 8;
       badgeLayer.append(h("div", {
-        class: "badge", title: idxs.map((i) => state.boxes[i].box.label).join(", "),
-        style: `left:${left + sx}px;top:${r.top + sy}px;background:${colors[first.label] || "#6b7280"}`,
-        onclick: () => openCard(idxs[0]),
-      }, idxs.length > 1 ? String(idxs.length) : "i"));
+        class: "badge", title: list.map((b) => b.label).join(", "),
+        style: `left:${left + sx}px;top:${r.top + sy}px;background:${boxColors[list[0].label] || "#6b7280"}`,
+        onclick: () => openCard(list[0].id),
+      }, list.length > 1 ? String(list.length) : "i"));
     }
   }
 
@@ -294,80 +406,175 @@
   }
 
   // ── 패널 ──
-  const tplSelect = h("select", { onchange: (e) => { state.tpl = e.target.value; if (state.result) apply(state.result); else paint(); } },
+  const tplSelect = h("select", { onchange: (e) => { state.tpl = e.target.value; paint(); drawLayer(); renderResult(); save(); } },
     Object.entries(TEMPLATES).map(([id, t]) => h("option", { value: id }, t.name)));
   const pill = h("button", { class: "pill", hidden: true, onclick: () => setMin(false) }, "notelayer");
   const foundMsg = h("p", { class: "muted" });
-  const preview = h("p", { class: "muted" });
   const copyMsg = h("p", { class: "msg" });
   const answer = h("textarea", { placeholder: "AI 가 돌려준 답(JSON)을 그대로 붙여 넣으세요" });
   const applyMsg = h("p", { class: "msg" });
+  const savedMsg = h("p", { class: "muted" });
+  const setMsg = (el, text, err = false) => { el.className = err ? "msg err" : "msg"; el.textContent = text; };
   const steps = h("details", { class: "steps", open: true },
-    h("summary", {}, "요청문 복사 · 답 붙여 넣기"),
-    h("h3", {}, "1. 이 페이지 본문으로 요청문 만들기"), foundMsg, preview,
+    h("summary", {}, "요청문 복사 · 답 붙여 넣기 · 저장"),
+    h("h3", {}, "1. 이 페이지 본문으로 요청문 만들기"), foundMsg,
     h("div", { class: "row" },
       h("button", { class: "primary", onclick: copyPrompt }, "요청문 복사"),
       h("button", { onclick: showRoot }, "본문 영역 보기")),
     copyMsg,
     h("h3", {}, "2. 쓰는 AI 에 붙여 넣고, 받은 답을 여기에"), answer,
     h("div", { class: "row" }, h("button", { class: "primary", onclick: () => applyText(answer.value) }, "적용")),
-    applyMsg);
+    applyMsg,
+    h("h3", {}, "3. 저장"), savedMsg,
+    h("div", { class: "row" },
+      h("button", { onclick: copyResult }, "지금 표시를 JSON 으로 복사"),
+      h("button", { onclick: clearSaved }, "표시 모두 지우기")));
   const legend = h("div", { class: "legend" });
   const tabs = h("div", { class: "tabs" });
   const list = h("div");
   const resultBox = h("div", { hidden: true }, legend, tabs, list);
+  const editBtn = h("button", { class: "icon toggle", title: "수정 모드", "aria-pressed": "false", onclick: () => setEditing(!state.editing) }, "✎ 수정");
+  const sideBtn = h("button", { class: "icon dock-only", title: "패널을 반대쪽으로", onclick: () => { state.side = state.side === "left" ? "right" : "left"; saveUi(); placePanel(); } }, "⇆");
+  const popBtn = h("button", { class: "icon", title: "별도 창으로 떼어 내기", onclick: () => (state.popup ? dockBack(true) : popOut()) }, "⧉");
+  const grip = h("div", { class: "grip", onpointerdown: startResize });
   const panel = h("aside", { class: "panel" },
-    h("header", {}, h("b", {}, "notelayer"), tplSelect,
-      h("button", { class: "icon", title: "접기", onclick: () => setMin(true) }, "—"),
-      h("button", { class: "icon", title: "닫고 표시 지우기", onclick: destroy }, "✕")),
+    grip,
+    h("header", {}, h("b", {}, "notelayer"), tplSelect, editBtn, sideBtn, popBtn,
+      h("button", { class: "icon dock-only", title: "접기", onclick: () => setMin(true) }, "—"),
+      h("button", { class: "icon", title: "닫기(저장한 표시는 남는다)", onclick: destroy }, "✕")),
+    h("div", { class: "edit-bar" }, "수정 모드 — 본문 글자를 끌어 골라 표시·설명을 달고, 표시를 눌러 종류를 바꾸거나 지웁니다. 설명 카드는 글을 눌러 바로 고칩니다."),
     h("div", { class: "body" }, steps, resultBox));
-  shadow.append(panel, pill);
+  // 도구 막대는 패널보다 위에 그려야 패널 옆 글자를 골라도 눌린다
+  shadow.append(panel, pill, pop);
 
   function setMin(min) {
     if (min) panel.setAttribute("data-min", ""); else panel.removeAttribute("data-min");
     pill.hidden = !min;
   }
+  const saveUi = () => store.set(UI_KEY, { side: state.side, width: state.width });
 
+  // 본문 양옆 빈자리 중 넓은 쪽에, 그 폭에 맞춰 둔다. 자리가 모자라면 기본 폭으로 겹쳐 두고 별도 창을 권한다
+  function autoPlace() {
+    const r = state.root.getBoundingClientRect();
+    const left = r.left, right = innerWidth - r.right;
+    state.side ??= right >= left ? "right" : "left";
+    const gap = state.side === "right" ? right : left;
+    state.width ??= gap >= PANEL_MIN + 20 ? Math.min(560, gap - 20) : 360;
+  }
+  function placePanel() {
+    if (!panelDocked()) return;
+    state.width = clamp(state.width, PANEL_MIN, Math.min(PANEL_MAX, innerWidth - 40));
+    Object.assign(panel.style, state.side === "left"
+      ? { left: "12px", right: "auto", width: `${state.width}px` }
+      : { right: "12px", left: "auto", width: `${state.width}px` });
+    Object.assign(grip.style, state.side === "left" ? { right: "-4px", left: "auto" } : { left: "-4px", right: "auto" });
+    queueDraw();
+    if (tab === "concepts") renderResult();
+  }
+  function startResize(e) {
+    e.preventDefault();
+    const x0 = e.clientX, w0 = state.width;
+    const move = (ev) => { state.width = w0 + (state.side === "left" ? ev.clientX - x0 : x0 - ev.clientX); placePanel(); };
+    const up = () => { removeEventListener("pointermove", move); removeEventListener("pointerup", up); saveUi(); };
+    addEventListener("pointermove", move);
+    addEventListener("pointerup", up);
+  }
+
+  // 별도 창: 같은 출처의 빈 창을 열고 패널을 통째로 옮긴다. 창을 닫으면 페이지로 돌아온다
+  function popOut() {
+    const w = Math.max(380, state.width || 380);
+    const win = window.open("", "notelayer-panel", `popup=yes,width=${w},height=${Math.max(500, screen.availHeight - 80)},left=${Math.max(0, screen.availWidth - w)},top=0`);
+    if (!win) { setMsg(applyMsg, "팝업이 막혀 창을 띄우지 못했습니다. 주소창 오른쪽에서 이 사이트의 팝업을 허용해 주세요.", true); steps.open = true; return; }
+    const doc = win.document;
+    doc.open(); doc.write("<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\"><title>notelayer</title></head><body style=\"margin:0\"></body></html>"); doc.close();
+    doc.title = `notelayer — ${document.title}`;
+    doc.head.append(Object.assign(doc.createElement("style"), { textContent: PANEL_CSS }));
+    state.popup = win;
+    panel.classList.add("popped");
+    doc.body.append(doc.adoptNode(panel));
+    pill.hidden = true;
+    popBtn.title = "창을 닫고 페이지로 붙이기";
+    win.addEventListener("pagehide", () => dockBack(false));
+    queueDraw();
+    renderResult();
+  }
+  function dockBack(closeWin) {
+    const win = state.popup;
+    if (!win) return;
+    state.popup = null;
+    panel.classList.remove("popped");
+    panel.removeAttribute("data-min");
+    shadow.append(document.adoptNode(panel));
+    popBtn.title = "별도 창으로 떼어 내기";
+    if (closeWin) try { win.close(); } catch {}
+    placePanel();
+    renderResult();
+  }
+
+  async function copyText(text) {
+    const doc = panel.ownerDocument, win = doc.defaultView;
+    try { await win.navigator.clipboard.writeText(text); return true; }
+    catch {
+      const ta = doc.createElement("textarea");
+      ta.value = text; ta.style.cssText = "position:fixed;left:-9999px";
+      doc.body.append(ta); ta.select();
+      const ok = doc.execCommand("copy"); ta.remove();
+      return ok;
+    }
+  }
   async function copyPrompt() {
     const text = PROMPT.build({ title: document.title, paragraphs: state.paras, templateId: state.tpl, template: TEMPLATES[state.tpl] });
-    try { await navigator.clipboard.writeText(text); }
-    catch {
-      const ta = h("textarea", { style: "position:fixed;left:-9999px" }, text);
-      shadow.append(ta); ta.select(); document.execCommand("copy"); ta.remove();
-    }
-    copyMsg.className = "msg";
-    copyMsg.textContent = `복사했습니다(${text.length.toLocaleString()}자). 쓰는 AI 에 붙여 넣으세요.`;
+    const ok = await copyText(text);
+    setMsg(copyMsg, ok ? `복사했습니다(${text.length.toLocaleString()}자). 쓰는 AI 에 붙여 넣으세요.` : "복사하지 못했습니다.", !ok);
+  }
+  async function copyResult() {
+    const ok = await copyText(JSON.stringify(serialize()));
+    setMsg(applyMsg, ok ? "지금 표시·설명을 JSON 으로 복사했습니다. notelayer 화면의 「AI 표시 만들기」 답 칸에 붙여 넣어도 됩니다." : "복사하지 못했습니다.", !ok);
+  }
+  function clearSaved() {
+    if (!confirm("이 페이지의 표시·설명을 모두 지울까요? 저장한 것도 지워집니다.")) return;
+    state.marks = []; state.boxes = []; state.concepts = null;
+    store.del(STORE_KEY);
+    paint(); drawLayer(); renderResult();
+    savedMsg.textContent = "";
+    setMsg(applyMsg, "모두 지웠습니다.");
   }
 
   function applyText(text) {
     let result;
     try { result = PROMPT.parseAnswer(text, state.tpl); }
-    catch (err) { applyMsg.className = "msg err"; applyMsg.textContent = `읽지 못했습니다: ${err.message}`; return null; }
+    catch (err) { setMsg(applyMsg, `읽지 못했습니다: ${err.message}`, true); return null; }
     return apply(result);
   }
 
-  function apply(result) {
-    state.result = result;
+  // 새 AI 답은 AI 것만 바꾸고 내가 단 표시·설명은 남긴다(notelayer 화면과 같은 규칙). 저장본을 열 때는 그대로 되살린다
+  function apply(result, { restored = false } = {}) {
+    if (!restored && (state.marks.some((m) => !m.mine) || state.boxes.some((b) => !b.mine))
+      && !confirm("지금 있는 AI 표시·설명을 이 답으로 바꿀까요? 내가 단 표시와 설명은 남습니다.")) return null;
     const a = anchor(result);
-    state.ranges = a.ranges; state.boxes = a.boxes; state.lost = a.lost;
+    state.marks = restored ? a.marks : [...state.marks.filter((m) => m.mine), ...a.marks];
+    state.boxes = restored ? a.boxes : [...state.boxes.filter((b) => b.mine), ...a.boxes];
+    const c = cleanConcepts(result.concepts);
+    if (c || restored) state.concepts = c;
     paint(); drawLayer(); renderResult();
-    const placed = KINDS.reduce((n, k) => n + a.ranges[k].length, 0);
-    const parts = [`표시 ${placed}/${a.total}개, 설명 ${a.boxes.length}개를 얹었습니다`];
-    const nodes = result.concepts?.nodes?.length;
-    if (nodes) parts.push(`개념 ${nodes}개`);
+    if (!restored) save();
+    const placed = a.marks.length;
+    const parts = [`${restored ? "저장한 " : ""}표시 ${placed}/${a.total}개, 설명 ${a.boxes.length}개를 얹었습니다`];
+    if (state.concepts) parts.push(`개념 ${state.concepts.nodes.length}개`);
     if (a.lost.length) parts.push(`\n원문에서 찾지 못한 표시 ${a.lost.length}개: ${a.lost.slice(0, 4).map((q) => `「${q}」`).join(", ")}${a.lost.length > 4 ? " …" : ""}`);
     if (!window.CSS?.highlights) parts.push("\n이 브라우저는 형광펜·물결 칠하기를 지원하지 않습니다(크롬 계열 권장).");
-    applyMsg.className = "msg";
-    applyMsg.textContent = parts.join(" · ");
+    setMsg(applyMsg, parts.join(" · "));
     steps.open = false;
     return { placed, total: a.total, boxes: a.boxes.length, lost: a.lost };
   }
 
   let tab = "boxes";
   function renderResult() {
-    resultBox.hidden = false;
+    const has = state.marks.length || state.boxes.length || state.concepts;
+    resultBox.hidden = !has;
+    if (!has) return;
     const t = TEMPLATES[state.tpl];
-    const count = (k) => state.ranges[k].length;
+    const count = (k) => state.marks.filter((m) => m.kind === k).length;
     const toggle = (key, ...label) => h("button", { "aria-pressed": String(state.show[key]),
       onclick: () => { state.show[key] = !state.show[key]; paint(); drawLayer(); renderResult(); } }, ...label);
     legend.replaceChildren(
@@ -375,93 +582,288 @@
       toggle("highlight", h("span", { class: "sw sw-hl" }), `${t.marks.highlight} ${count("highlight")}`),
       toggle("wave", h("span", { class: "sw sw-wave" }), `${t.marks.wave} ${count("wave")}`),
       toggle("boxes", `설명 배지 ${state.boxes.length}`));
-    const nodes = state.result?.concepts?.nodes || [];
+    const nodes = state.concepts?.nodes || [];
     tabs.replaceChildren(
       h("button", { "aria-selected": String(tab === "boxes"), onclick: () => { tab = "boxes"; renderResult(); } }, `설명 ${state.boxes.length}`),
-      h("button", { "aria-selected": String(tab === "concepts"), onclick: () => { tab = "concepts"; renderResult(); } }, `요약 ${nodes.length ? `(개념 ${nodes.length})` : ""}`));
+      h("button", { "aria-selected": String(tab === "concepts"), onclick: () => { tab = "concepts"; renderResult(); } }, `요약${nodes.length ? ` (개념 ${nodes.length})` : ""}`));
     list.replaceChildren(tab === "boxes" ? renderBoxes() : renderConcepts());
   }
 
   function renderBoxes() {
-    const colors = TEMPLATES[state.tpl].boxes;
+    const boxColors = TEMPLATES[state.tpl].boxes, labels = Object.keys(boxColors);
     const frag = document.createDocumentFragment();
-    state.boxes.forEach(({ box, el }, i) => {
-      frag.append(h("div", { class: "card", "data-i": i, style: `--c:${colors[box.label] || "#6b7280"}`,
-        onclick: (e) => { if (!e.target.closest("details")) flashElement(el); } },
-        h("div", { class: "chip" }, box.label),
-        h("div", {}, box.text),
-        typeof box.pre === "string" && box.pre.trim() ? h("pre", {}, box.pre) : null,
-        typeof box.answer === "string" && box.answer.trim() ? h("details", {}, h("summary", {}, "답 보기"), h("div", {}, box.answer)) : null));
-    });
-    if (!state.boxes.length) frag.append(h("p", { class: "muted" }, "설명이 없습니다."));
+    const edit = state.editing;
+    // 고칠 때는 화면을 다시 그리지 않고 값만 바꾼다(그리면 입력 중인 칸의 커서가 날아간다)
+    const editable = (b, key, cls, ph, tag = "div") => h(tag, { class: cls, contenteditable: "plaintext-only", "data-ph": ph,
+      oninput: (e) => { b[key] = key === "pre" ? e.target.innerText.replace(/\n$/, "") : tidy(e.target.innerText); b.mine = true; save(); } }, b[key] || "");
+    for (const b of sortedBoxes()) {
+      const c = boxColors[b.label] || "#6b7280";
+      const head = edit
+        ? h("div", { class: "card-head" },
+          h("select", { onchange: (e) => { b.label = e.target.value; b.mine = true; save(); renderResult(); queueDraw(); } },
+            [...new Set([...labels, b.label])].map((l) => h("option", { value: l, selected: l === b.label }, l))),
+          h("span", { class: "grow" }),
+          h("button", { class: "icon", title: "본문 위치로", onclick: () => flashElement(b.el) }, "↗"),
+          h("button", { class: "icon", title: "이 설명 지우기", onclick: () => { state.boxes = state.boxes.filter((x) => x !== b); save(); renderResult(); queueDraw(); } }, "✕"))
+        : h("div", { class: "card-head" }, h("span", { class: "chip" }, b.label));
+      frag.append(h("div", { class: "card", "data-id": b.id, style: `--c:${c}`,
+        onclick: (e) => { if (!edit && !e.target.closest("details")) flashElement(b.el); } },
+        head,
+        edit ? editable(b, "text", "txt", "설명을 쓰세요") : h("div", {}, b.text),
+        edit ? editable(b, "pre", "", "(선택) 글자 그림·비교", "pre") : b.pre ? h("pre", {}, b.pre) : null,
+        edit ? editable(b, "answer", "ans-ed", "(선택) 답 — 처음에 접혀 보입니다")
+          : b.answer ? h("details", {}, h("summary", {}, "답 보기"), h("div", {}, b.answer)) : null));
+    }
+    if (!state.boxes.length) frag.append(h("p", { class: "muted" }, edit ? "본문 글자를 끌어 고른 다음 「+ 설명」을 누르면 설명을 달 수 있습니다." : "설명이 없습니다."));
     return frag;
   }
 
+  // ── 요약: 개념 구조도. 위아래 관계는 실선(꺾인 줄), 위아래가 아닌 관계는 점선 화살표 + 이름표 ──
+  let mapObserver = null;
   function renderConcepts() {
-    const c = state.result?.concepts;
-    const nodes = (c?.nodes || []).filter((n) => n && n.id != null && typeof n.term === "string");
-    if (!nodes.length) return h("p", { class: "muted" }, "개념 구조도가 없습니다.");
-    const byId = new Map(nodes.map((n) => [String(n.id), n]));
+    mapObserver?.disconnect();
+    const c = state.concepts;
+    if (!c?.nodes?.length) return h("p", { class: "muted" }, "개념 구조도가 없습니다.");
+    const byId = new Map(c.nodes.map((n) => [n.id, n]));
     const kids = new Map();
-    for (const n of nodes) {
-      const p = n.parent != null && byId.has(String(n.parent)) && String(n.parent) !== String(n.id) ? String(n.parent) : null;
-      if (!kids.has(p)) kids.set(p, []);
-      kids.get(p).push(n);
-    }
-    const links = Array.isArray(c.links) ? c.links : [];
-    const seen = new Set();
-    const branch = (parent) => h("ul", { class: parent == null ? "tree" : "" }, (kids.get(parent) || []).filter((n) => !seen.has(n.id) && seen.add(n.id)).map((n) => {
-      const pts = (Array.isArray(n.points) ? n.points : []).filter((x) => typeof x === "string");
-      const ptsList = h("ul", { class: "points", hidden: true }, pts.map((x) => h("li", {}, x)));
-      const out = links.filter((l) => String(l.from) === String(n.id) && byId.has(String(l.to)));
-      return h("li", { class: "node" },
-        h("div", { class: "term", onclick: () => (ptsList.hidden = !ptsList.hidden) }, n.term, n.role ? h("span", { class: "role" }, n.role) : null),
-        n.gloss ? h("div", { class: "gloss" }, n.gloss) : null,
-        out.map((l) => h("div", { class: "link" }, `→ ${l.label} → ${byId.get(String(l.to)).term}`)),
-        ptsList,
-        kids.has(String(n.id)) ? branch(String(n.id)) : null);
-    }));
-    return h("div", {}, c.topic ? h("p", { class: "muted" }, c.topic) : null, branch(null));
+    for (const n of c.nodes) { if (!kids.has(n.parent)) kids.set(n.parent, []); kids.get(n.parent).push(n); }
+    const INDENT = 20;
+    const width = list.clientWidth || 300;
+    const gutter = c.links.length ? clamp(Math.round(width * 0.3), 76, 150) : 0;
+    const wrap = h("div", { class: "map", style: `padding-right:${gutter}px` });
+    const lines = svgEl("svg", { class: "map-lines" });
+    const labels = h("div");
+    const topic = h("div", { class: "mnode topic" }, c.topic);
+    wrap.append(lines, topic);
+    const rows = [], seen = new Set();
+    const walk = (parent, depth) => {
+      for (const n of kids.get(parent) || []) {
+        if (seen.has(n.id)) continue;
+        seen.add(n.id);
+        const pts = (Array.isArray(n.points) ? n.points : []).filter((x) => typeof x === "string" && x.trim());
+        const ptsList = h("ul", { class: "points", hidden: true }, pts.map((x) => h("li", {}, x)));
+        const card = h("div", { class: "mnode", "data-id": n.id, style: `margin-left:${depth * INDENT}px` },
+          h("div", { class: "term", title: pts.length ? "눌러서 핵심 내용 펼치기" : "", onclick: () => (ptsList.hidden = !ptsList.hidden) },
+            n.term, n.role ? h("span", { class: "role" }, n.role) : null),
+          n.gloss ? h("div", { class: "gloss" }, n.gloss) : null,
+          ptsList);
+        rows.push({ id: n.id, parent, el: card });
+        wrap.append(card);
+        walk(n.id, depth + 1);
+      }
+    };
+    walk(null, 1);
+    wrap.append(labels);
+    const draw = () => drawMap({ wrap, lines, labels, topic, rows, links: c.links, gutter, byId });
+    const win = list.ownerDocument.defaultView;
+    win.requestAnimationFrame(draw);
+    mapObserver = new win.ResizeObserver(() => win.requestAnimationFrame(draw));
+    mapObserver.observe(wrap);
+    return wrap;
   }
 
-  function openCard(i) {
-    setMin(false);
+  function drawMap({ wrap, lines, labels, topic, rows, links, gutter }) {
+    if (!wrap.isConnected) return;
+    lines.replaceChildren(); labels.replaceChildren();
+    const base = wrap.getBoundingClientRect();
+    const box = (el) => { const r = el.getBoundingClientRect(); return { l: r.left - base.left, r: r.right - base.left, t: r.top - base.top, b: r.bottom - base.top, m: (r.top + r.bottom) / 2 - base.top }; };
+    const pos = new Map(rows.map((x) => [x.id, box(x.el)]));
+    const topicBox = box(topic);
+    const path = (d, cls) => { const p = svgEl("path", { d, class: cls }); lines.append(p); return p; };
+    const defs = svgEl("defs");
+    const marker = svgEl("marker", { id: "nl-arrow", viewBox: "0 0 8 8", refX: "7", refY: "4", markerWidth: "7", markerHeight: "7", orient: "auto-start-reverse" });
+    marker.append(svgEl("path", { d: "M0,0 L8,4 L0,8 z", class: "arrow" }));
+    defs.append(marker); lines.append(defs);
+    // 위아래 관계: 상위 개념 왼쪽 아래에서 내려와 하위 개념 왼쪽으로 꺾어 들어간다
+    for (const x of rows) {
+      const pb = x.parent == null ? topicBox : pos.get(x.parent), cb = pos.get(x.id);
+      if (!pb || !cb) continue;
+      const vx = pb.l + 10;
+      path(`M${vx} ${pb.b} V${cb.m - 6} Q${vx} ${cb.m} ${vx + 6} ${cb.m} H${cb.l}`, "tree");
+    }
+    if (!links.length) return;
+    // 위아래가 아닌 관계: 카드 오른쪽 여백에서 활처럼 잇는다. 겹치는 구간은 다른 줄(lane)로 비켜 간다
+    const right = Math.max(...[...pos.values()].map((b) => b.r));
+    const items = links.filter((l) => pos.has(l.from) && pos.has(l.to)).map((l) => {
+      const a = pos.get(l.from), b = pos.get(l.to);
+      return { l, y1: a.m, y2: b.m, top: Math.min(a.m, b.m), bot: Math.max(a.m, b.m) };
+    }).sort((p, q) => (p.bot - p.top) - (q.bot - q.top));
+    const lanes = [];
+    for (const it of items) {
+      let k = 0;
+      while (lanes[k]?.some((o) => o.top - 6 < it.bot && it.top < o.bot + 6)) k++;
+      (lanes[k] ||= []).push(it);
+      it.lane = k;
+    }
+    const placed = [];
+    for (const it of [...items].sort((p, q) => p.y1 - q.y1)) {
+      const bx = right + 12 + Math.min(it.lane, 3) * 9;
+      const p = path(`M${right} ${it.y1} C${bx} ${it.y1} ${bx} ${it.y2} ${right + 1} ${it.y2}`, "rel");
+      p.setAttribute("marker-end", "url(#nl-arrow)");
+      const lab = h("div", { class: "rel-label", style: `left:${bx + 4}px;max-width:${Math.max(40, gutter - (bx - right) - 8)}px` }, it.l.label);
+      labels.append(lab);
+      // 이름표는 화살표가 출발하는 개념 옆에 둔다. 가운데에 두면 긴 화살표의 이름표가 엉뚱한 개념 옆에 몰렸다
+      let top = it.y1 - lab.offsetHeight / 2;
+      for (const q of placed) if (top < q.b + 3 && top + lab.offsetHeight > q.t - 3) top = q.b + 3;
+      lab.style.top = `${top}px`;
+      placed.push({ t: top, b: top + lab.offsetHeight });
+      // 이름표에 올리면 잇는 두 개념과 선을 강조한다
+      const cards = [it.l.from, it.l.to].map((id) => rows.find((r) => r.id === id)?.el).filter(Boolean);
+      const on = (v) => { lab.classList.toggle("on", v); p.classList.toggle("on", v); cards.forEach((c) => c.classList.toggle("on", v)); };
+      lab.addEventListener("mouseenter", () => on(true));
+      lab.addEventListener("mouseleave", () => on(false));
+    }
+  }
+
+  function openCard(id) {
+    if (state.popup) state.popup.focus(); else setMin(false);
     if (tab !== "boxes") { tab = "boxes"; renderResult(); }
-    const card = list.querySelector(`[data-i="${i}"]`);
-    if (!card) return;
+    const card = list.querySelector(`[data-id="${id}"]`);
+    if (!card) return null;
     card.scrollIntoView({ behavior: "smooth", block: "center" });
     card.classList.remove("flash"); void card.offsetWidth; card.classList.add("flash");
+    return card;
   }
 
+  // ── 수정 모드: 글자를 골라 표시·설명 달기, 표시를 눌러 바꾸기·지우기 ──
+  function setEditing(on) {
+    state.editing = on;
+    editBtn.setAttribute("aria-pressed", String(on));
+    if (on) panel.setAttribute("data-editing", ""); else panel.removeAttribute("data-editing");
+    hidePop();
+    renderResult();
+  }
+  function hidePop() { pop.hidden = true; pop.replaceChildren(); }
+  function showPop(x, y, buttons) {
+    pop.replaceChildren(...buttons);
+    pop.hidden = false;
+    const w = pop.offsetWidth;
+    pop.style.left = `${clamp(x - w / 2, 8, innerWidth - w - 8) + scrollX}px`;
+    pop.style.top = `${y + scrollY}px`;
+  }
+  const kindName = (k) => TEMPLATES[state.tpl].marks[k];
+  const SHAPE = { circle: "◯", highlight: "▬", wave: "〰" };
+
+  function afterChange() { paint(); drawLayer(); renderResult(); save(); }
+
+  function showSelectionTools(range) {
+    const r = range.getBoundingClientRect();
+    const quote = tidy(range.toString());
+    showPop(r.left + r.width / 2, r.bottom + 6, [
+      ...KINDS.map((k) => h("button", { title: kindName(k), onclick: () => {
+        state.marks.push({ id: uid(), kind: k, quote, range, mine: true });
+        getSelection()?.removeAllRanges(); hidePop(); afterChange();
+      } }, `${SHAPE[k]} ${kindName(k)}`)),
+      h("span", { class: "sep" }),
+      h("button", { onclick: () => {
+        const i = paraIndexOf(range.startContainer);
+        const el = i >= 0 ? state.paras[i].el : range.startContainer.parentElement;
+        const b = { id: uid(), label: Object.keys(TEMPLATES[state.tpl].boxes)[0], text: "", pre: "", answer: "", el, mine: true };
+        state.boxes.push(b);
+        getSelection()?.removeAllRanges(); hidePop();
+        tab = "boxes"; afterChange();
+        openCard(b.id)?.querySelector(".txt")?.focus();
+      } }, "+ 설명"),
+    ]);
+  }
+  function showMarkTools(m, x, y) {
+    const lines = lineRects(m.range);
+    const lastLine = lines[lines.length - 1];
+    showPop(x, (lastLine ? lastLine.bottom : y) + 6, [
+      ...KINDS.map((k) => h("button", { title: kindName(k), "aria-pressed": String(m.kind === k), onclick: () => { m.kind = k; m.mine = true; hidePop(); afterChange(); } }, `${SHAPE[k]} ${kindName(k)}`)),
+      h("span", { class: "sep" }),
+      h("button", { onclick: () => { state.marks = state.marks.filter((x) => x !== m); hidePop(); afterChange(); } }, "지우기"),
+    ]);
+  }
+  function caretAt(x, y) {
+    if (document.caretPositionFromPoint) { const p = document.caretPositionFromPoint(x, y); return p && { node: p.offsetNode, offset: p.offset }; }
+    const r = document.caretRangeFromPoint?.(x, y);
+    return r && { node: r.startContainer, offset: r.startOffset };
+  }
+  // 누른 자리의 표시. 여러 개가 겹치면 가장 짧은 것
+  function markAt(x, y) {
+    const c = caretAt(x, y), hits = [];
+    for (const m of state.marks) {
+      if (!state.show[m.kind]) continue;
+      let hit = false;
+      if (c) try { hit = m.range.isPointInRange(c.node, c.offset) && !(m.range.endContainer === c.node && m.range.endOffset === c.offset); } catch {}
+      if (!hit && m.kind === "circle") hit = lineRects(m.range).some((l) => x >= l.left - 4 && x <= l.right + 4 && y >= l.top - 3 && y <= l.bottom + 3);
+      if (hit) hits.push(m);
+    }
+    return hits.sort((a, b) => a.quote.length - b.quote.length)[0] || null;
+  }
+  function onMouseUp(e) {
+    if (!state.editing || e.composedPath().includes(host)) return;
+    setTimeout(() => {
+      const sel = getSelection();
+      if (!sel?.rangeCount || sel.isCollapsed) return;
+      const r = sel.getRangeAt(0);
+      if (!state.root.contains(r.commonAncestorContainer) || !squash(r.toString())) return;
+      showSelectionTools(r.cloneRange());
+    }, 0);
+  }
+  function onClick(e) {
+    if (!state.editing || e.composedPath().includes(host)) return;
+    const sel = getSelection();
+    if (sel && !sel.isCollapsed) return;
+    const m = markAt(e.clientX, e.clientY);
+    if (!m) { hidePop(); return; }
+    e.preventDefault(); e.stopPropagation(); // 표시가 링크 위에 있어도 페이지를 옮기지 않는다
+    showMarkTools(m, e.clientX, e.clientY);
+  }
+  function onKey(e) { if (e.key === "Escape") hidePop(); }
+  function onScroll() { queueDraw(); if (!pop.hidden && pop.dataset.keep !== "1") hidePop(); }
+
   function destroy() {
-    removeEventListener("scroll", queueDraw, true);
-    removeEventListener("resize", queueDraw);
-    ro.disconnect();
+    removeEventListener("scroll", onScroll, true);
+    removeEventListener("resize", onResize);
+    removeEventListener("pagehide", onPageHide);
+    document.removeEventListener("mouseup", onMouseUp, true);
+    document.removeEventListener("click", onClick, true);
+    document.removeEventListener("keydown", onKey, true);
+    ro.disconnect(); mapObserver?.disconnect();
+    if (state.popup) try { state.popup.close(); } catch {}
     if (window.CSS?.highlights) for (const k of ["nl-ov-hl", "nl-ov-wave", "nl-ov-flash"]) CSS.highlights.delete(k);
     host.remove(); pageStyle.remove();
     delete window.NL_OVERLAY;
   }
+  function onResize() { placePanel(); queueDraw(); }
+  function onPageHide() { if (state.popup) try { state.popup.close(); } catch {} }
 
   // ── 시작 ──
   state.root = findRoot();
   state.paras = collectParagraphs(state.root);
   const cut = (s) => (s.length > 36 ? `${s.slice(0, 36)}…` : s);
   foundMsg.textContent = state.paras.length
-    ? `본문 문단 ${state.paras.length}개를 찾았습니다. 블로그 옆 메뉴·댓글은 뺐습니다.`
+    ? `본문 문단 ${state.paras.length}개를 찾았습니다. 블로그 옆 메뉴·댓글은 뺐습니다.\n첫 문단: ${cut(state.paras[0].text)}\n끝 문단: ${cut(state.paras[state.paras.length - 1].text)}`
     : "본문을 찾지 못했습니다.";
-  if (state.paras.length) preview.textContent = `첫 문단: ${cut(state.paras[0].text)}\n끝 문단: ${cut(state.paras[state.paras.length - 1].text)}`;
-  preview.style.whiteSpace = "pre-wrap";
-  paint();
-  addEventListener("scroll", queueDraw, { capture: true, passive: true });
-  addEventListener("resize", queueDraw);
+  autoPlace();
+  placePanel();
+  addEventListener("scroll", onScroll, { capture: true, passive: true });
+  addEventListener("resize", onResize);
+  addEventListener("pagehide", onPageHide);
+  document.addEventListener("mouseup", onMouseUp, true);
+  document.addEventListener("click", onClick, true);
+  document.addEventListener("keydown", onKey, true);
   const ro = new ResizeObserver(queueDraw);
   ro.observe(document.body);
 
+  const saved = store.get(STORE_KEY);
+  if (saved?.v === 1) {
+    if (TEMPLATES[saved.tpl]) { state.tpl = saved.tpl; tplSelect.value = saved.tpl; }
+    apply(saved, { restored: true });
+    savedMsg.textContent = `이 페이지에 저장한 표시를 불러왔습니다(${new Date(saved.savedAt).toLocaleString()}). 고친 내용은 이 브라우저에 자동으로 저장됩니다.`;
+  } else {
+    savedMsg.textContent = "답을 적용하거나 고치면 이 페이지 주소별로 이 브라우저에 자동 저장되어, 새로 고쳐도 남습니다.";
+    paint();
+  }
+
   window.NL_OVERLAY = {
-    toggle: () => setMin(!panel.hasAttribute("data-min")),
+    toggle: () => (state.popup ? state.popup.focus() : setMin(!panel.hasAttribute("data-min"))),
     apply: applyText,
-    info: () => ({ root: state.root.tagName + (state.root.id ? `#${state.root.id}` : "") + (state.root.className ? `.${String(state.root.className).trim().split(/\s+/).join(".")}` : ""),
-      paragraphs: state.paras.length, first: state.paras[0]?.text, last: state.paras.at(-1)?.text }),
+    info: () => ({ root: state.root.tagName + (state.root.id ? `#${state.root.id}` : ""), paragraphs: state.paras.length,
+      first: state.paras[0]?.text, last: state.paras.at(-1)?.text, side: state.side, width: state.width,
+      marks: state.marks.length, boxes: state.boxes.length, editing: state.editing, popped: !!state.popup }),
     destroy,
   };
 })();
