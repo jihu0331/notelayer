@@ -21,8 +21,21 @@
   const SKIP = "nav,aside,footer,header,form,[role=navigation],[role=complementary],[aria-hidden=true],notelayer-overlay";
   const BLOCK = "p,div,li,ul,ol,dl,dt,dd,table,tr,td,th,pre,blockquote,h1,h2,h3,h4,h5,h6,section,article,figure,figcaption,main";
   const LEAF = "p,div,li,dt,dd,td,th,pre,blockquote,h1,h2,h3,h4,h5,h6,figcaption";
-  // 이 페이지에서 단 표시·고친 내용은 페이지 주소별로 이 브라우저에 저장한다
-  const STORE_KEY = `notelayer:v1:${location.origin}${location.pathname}`;
+  // 표시·메모는 notelayer 주소의 저장 창(store.html)이 이 PC 에 저장한다.
+  // 이 사이트의 저장 공간에는 넣지 않는다 — 사이트와 그 페이지에 실린 광고·분석 스크립트가 읽을 수 있다
+  const SCRIPT_SRC = document.currentScript?.src || window.NL_BASE || "";
+  const BASE = SCRIPT_SRC ? SCRIPT_SRC.replace(/[?#].*$/, "").replace(/[^/]*$/, "") : "";
+  const NL_ORIGIN = BASE ? new URL(BASE).origin : "";
+  // 같은 페이지 알아보기: 페이지가 밝힌 대표 주소(같은 사이트일 때만)에서 #뒤와 광고 추적 꼬리만 뗀다.
+  // 물음표 뒤(?id=3 같은 글 구분)는 남긴다
+  function pageKey() {
+    let u = new URL(location.href);
+    try { const c = new URL(document.querySelector('link[rel="canonical"]')?.href || "", location.href); if (c.origin === u.origin) u = c; } catch {}
+    u.hash = "";
+    for (const k of [...u.searchParams.keys()]) if (/^(utm_|mc_)|^(fbclid|gclid|igshid|ref_src)$/i.test(k)) u.searchParams.delete(k);
+    const q = u.searchParams.toString();
+    return u.origin + u.pathname + (q ? `?${q}` : "");
+  }
   const UI_KEY = "notelayer:ui";
   const PANEL_MIN = 280, PANEL_MAX = 720;
   const SVGNS = "http://www.w3.org/2000/svg";
@@ -192,13 +205,27 @@
       ...(state.concepts ? { concepts: state.concepts } : {}),
     };
   }
+  const hasData = () => !!(state.marks.length || state.boxes.length || state.concepts);
   let saveTimer = 0;
+  // 고칠 때마다 저장 창에 보낸다. 저장 창이 닫혀 있으면 「저장하지 않은 변경」으로 남겨 두었다가 다시 연결되면 보낸다
   function save() {
+    conn.dirty = true;
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      if (!state.marks.length && !state.boxes.length && !state.concepts) { store.del(STORE_KEY); return; }
-      if (!store.set(STORE_KEY, { v: 1, tpl: state.tpl, savedAt: Date.now(), ...serialize() })) setMsg(applyMsg, "이 사이트에서는 저장이 막혀 있어, 새로 고치면 표시가 사라집니다.", true);
-    }, 300);
+    saveTimer = setTimeout(async () => {
+      if (!conn.ready) { renderStore(); return; }
+      try {
+        if (!hasData()) { await send("delete"); setSaved("이 페이지에 저장한 표시를 지웠습니다."); }
+        else {
+          const r = await send("save", { data: { v: 1, tpl: state.tpl, ...serialize() }, paragraphs: state.paras.map((x) => x.text) });
+          setSaved(`저장했습니다 · ${fmtTime(r.at)}${r.file ? " · 폴더에도 파일로 저장" : ""}`);
+        }
+        conn.dirty = false;
+      } catch (err) {
+        if (!conn.win || conn.win.closed) conn.ready = false;
+        setSaved(`저장하지 못했습니다: ${err.message}`, true);
+      }
+      renderStore();
+    }, 400);
   }
 
   // ── 그리기 ──
@@ -258,6 +285,11 @@
     h3 { font-size: 12px; margin: 12px 0 4px; color: #374151; }
     textarea { width: 100%; height: 90px; resize: vertical; border: 1px solid #d0d7de; border-radius: 8px; padding: 6px; font-size: 12px; }
     details.steps > summary { cursor: pointer; color: #6b7280; font-size: 12px; margin-bottom: 6px; }
+    .savebar { margin: 0 0 8px; padding: 6px 10px; border-radius: 8px; background: #f6f8fa; }
+    .savebar .msg { margin: 2px 0; }
+    .savebar .msg:empty { display: none; }
+    .savebar button[hidden] { display: none; }
+    .savebar button { margin: 4px 0 2px; }
     .legend { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
     .legend button { font-size: 12px; padding: 3px 8px; border-radius: 999px; }
     .legend button[aria-pressed="false"] { opacity: .4; }
@@ -413,10 +445,13 @@
   const copyMsg = h("p", { class: "msg" });
   const answer = h("textarea", { placeholder: "AI 가 돌려준 답(JSON)을 그대로 붙여 넣으세요" });
   const applyMsg = h("p", { class: "msg" });
-  const savedMsg = h("p", { class: "muted" });
+  const storeState = h("div", { class: "msg" });
+  const savedMsg = h("div", { class: "msg" });
+  const storeOpenBtn = h("button", { class: "primary", hidden: true, onclick: () => openStore() }, "저장 창 열기");
+  const saveBar = h("div", { class: "savebar" }, storeState, savedMsg, storeOpenBtn);
   const setMsg = (el, text, err = false) => { el.className = err ? "msg err" : "msg"; el.textContent = text; };
   const steps = h("details", { class: "steps", open: true },
-    h("summary", {}, "요청문 복사 · 답 붙여 넣기 · 저장"),
+    h("summary", {}, "요청문 복사 · 답 붙여 넣기 · 내보내기"),
     h("h3", {}, "1. 이 페이지 본문으로 요청문 만들기"), foundMsg,
     h("div", { class: "row" },
       h("button", { class: "primary", onclick: copyPrompt }, "요청문 복사"),
@@ -425,7 +460,7 @@
     h("h3", {}, "2. 쓰는 AI 에 붙여 넣고, 받은 답을 여기에"), answer,
     h("div", { class: "row" }, h("button", { class: "primary", onclick: () => applyText(answer.value) }, "적용")),
     applyMsg,
-    h("h3", {}, "3. 저장"), savedMsg,
+    h("h3", {}, "3. 내보내기 · 지우기"),
     h("div", { class: "row" },
       h("button", { onclick: copyResult }, "지금 표시를 JSON 으로 복사"),
       h("button", { onclick: clearSaved }, "표시 모두 지우기")));
@@ -443,7 +478,7 @@
       h("button", { class: "icon dock-only", title: "접기", onclick: () => setMin(true) }, "—"),
       h("button", { class: "icon", title: "닫기(저장한 표시는 남는다)", onclick: destroy }, "✕")),
     h("div", { class: "edit-bar" }, "수정 모드 — 본문 글자를 끌어 골라 표시·설명을 달고, 표시를 눌러 종류를 바꾸거나 지웁니다. 설명 카드는 글을 눌러 바로 고칩니다."),
-    h("div", { class: "body" }, steps, resultBox));
+    h("div", { class: "body" }, saveBar, steps, resultBox));
   // 도구 막대는 패널보다 위에 그려야 패널 옆 글자를 골라도 눌린다
   shadow.append(panel, pill, pop);
 
@@ -534,9 +569,7 @@
   function clearSaved() {
     if (!confirm("이 페이지의 표시·설명을 모두 지울까요? 저장한 것도 지워집니다.")) return;
     state.marks = []; state.boxes = []; state.concepts = null;
-    store.del(STORE_KEY);
-    paint(); drawLayer(); renderResult();
-    savedMsg.textContent = "";
+    paint(); drawLayer(); renderResult(); save();
     setMsg(applyMsg, "모두 지웠습니다.");
   }
 
@@ -814,7 +847,88 @@
   function onKey(e) { if (e.key === "Escape") hidePop(); }
   function onScroll() { queueDraw(); if (!pop.hidden && pop.dataset.keep !== "1") hidePop(); }
 
+  // ── 저장 창과 주고받기 ──
+  // 저장 창은 다른 출처(notelayer 주소)의 창이라 postMessage 로만 이야기한다.
+  // 받는 쪽은 출처와 보낸 창을 둘 다 확인한다(이 사이트의 다른 창이 흉내 내지 못하게)
+  const KEY = pageKey();
+  const conn = { win: null, ready: false, seq: 0, pending: new Map(), helloT: 0, watchT: 0, folder: false, dirty: false };
+  const fmtTime = (t) => new Date(t).toLocaleString();
+  const msgFor = (type, id, extra = {}) => ({ nl: "page", type, id, key: KEY, url: location.href, title: document.title, ...extra });
+  function setSaved(text, err = false) { savedMsg.className = err ? "msg err" : "msg"; savedMsg.textContent = text; }
+  function openStore() {
+    if (!BASE) return null;
+    try { conn.win = window.open(`${BASE}store.html`, "notelayer-store", `popup=yes,width=380,height=560,left=${Math.max(0, screen.availWidth - 400)},top=60`); } catch { conn.win = null; }
+    if (!conn.win) setSaved("팝업이 막혀 저장 창을 열지 못했습니다. 주소창 오른쪽에서 이 사이트의 팝업을 허용해 주세요.", true);
+    connect();
+    return conn.win;
+  }
+  // 저장 창이 다 뜰 때까지 인사를 되풀이한다(뜨기 전에 보낸 메시지는 버려진다)
+  function connect() {
+    conn.ready = false;
+    clearInterval(conn.helloT);
+    renderStore();
+    if (!conn.win) return;
+    let n = 0;
+    conn.helloT = setInterval(() => {
+      if (conn.ready || !conn.win || conn.win.closed || ++n > 80) { clearInterval(conn.helloT); renderStore(); return; }
+      try { conn.win.postMessage(msgFor("hello", 0), NL_ORIGIN); } catch {}
+    }, 250);
+  }
+  function send(type, extra) {
+    return new Promise((ok, no) => {
+      if (!conn.ready || !conn.win || conn.win.closed) { no(new Error("저장 창이 닫혀 있습니다")); return; }
+      const id = ++conn.seq;
+      const t = setTimeout(() => { conn.pending.delete(id); no(new Error("저장 창이 답하지 않습니다")); }, 8000);
+      conn.pending.set(id, { ok, no, t });
+      conn.win.postMessage(msgFor(type, id, extra), NL_ORIGIN);
+    });
+  }
+  function onStoreMessage(e) {
+    if (!NL_ORIGIN || e.origin !== NL_ORIGIN || !conn.win || e.source !== conn.win) return;
+    const d = e.data;
+    if (!d || d.nl !== "store") return;
+    if (d.type === "ready") {
+      if (conn.ready) return;
+      conn.ready = true; conn.folder = !!d.folder;
+      clearInterval(conn.helloT);
+      renderStore();
+      onStoreReady();
+      return;
+    }
+    const p = conn.pending.get(d.id);
+    if (!p) return;
+    conn.pending.delete(d.id); clearTimeout(p.t);
+    if (d.type === "error") p.no(new Error(d.message)); else p.ok(d);
+  }
+  // 연결되면: 저장하지 않은 변경이 있으면 보내고, 아직 아무 표시도 없으면 저장본을 꺼내 칠한다
+  async function onStoreReady() {
+    if (conn.dirty) { save(); return; }
+    if (hasData()) return;
+    try {
+      const r = await send("load");
+      if (r.record?.data && !hasData()) {
+        const data = r.record.data;
+        if (TEMPLATES[data.tpl]) { state.tpl = data.tpl; tplSelect.value = data.tpl; }
+        apply(data, { restored: true });
+        setSaved(`저장해 둔 표시를 불러왔습니다 · ${fmtTime(r.record.savedAt)}${r.from === "folder" ? " · 폴더의 파일에서" : ""}`);
+      } else if (!r.record) setSaved("이 페이지에 저장한 표시가 아직 없습니다. 답을 적용하거나 고치면 자동으로 저장됩니다.");
+    } catch (err) {
+      setSaved(`불러오지 못했습니다: ${err.message}`, true);
+    }
+  }
+  function renderStore() {
+    const live = conn.win && !conn.win.closed;
+    storeOpenBtn.hidden = !BASE || !!(conn.ready && live);
+    storeState.className = conn.ready && live ? "msg" : "msg err";
+    storeState.textContent = !BASE ? "저장 창 주소를 알 수 없어 저장할 수 없습니다. 즐겨찾기 버튼으로 다시 열어 주세요."
+      : conn.ready && live ? `● 저장 창과 연결됨 — 이 PC 에 저장합니다${conn.folder ? "(고른 폴더에도 파일로)" : ""}. 이 사이트는 저장한 내용을 읽지 못합니다.`
+      : live ? "○ 저장 창과 연결하는 중…"
+      : `○ 저장 창이 닫혀 있어 저장되지 않습니다${conn.dirty ? "(저장하지 않은 변경이 있습니다)" : ""}.`;
+  }
+
   function destroy() {
+    removeEventListener("message", onStoreMessage);
+    clearInterval(conn.helloT); clearInterval(conn.watchT); clearTimeout(saveTimer);
     removeEventListener("scroll", onScroll, true);
     removeEventListener("resize", onResize);
     removeEventListener("pagehide", onPageHide);
@@ -848,22 +962,25 @@
   const ro = new ResizeObserver(queueDraw);
   ro.observe(document.body);
 
-  const saved = store.get(STORE_KEY);
-  if (saved?.v === 1) {
-    if (TEMPLATES[saved.tpl]) { state.tpl = saved.tpl; tplSelect.value = saved.tpl; }
-    apply(saved, { restored: true });
-    savedMsg.textContent = `이 페이지에 저장한 표시를 불러왔습니다(${new Date(saved.savedAt).toLocaleString()}). 고친 내용은 이 브라우저에 자동으로 저장됩니다.`;
-  } else {
-    savedMsg.textContent = "답을 적용하거나 고치면 이 페이지 주소별로 이 브라우저에 자동 저장되어, 새로 고쳐도 남습니다.";
-    paint();
-  }
+  paint();
+  // 즐겨찾기 버튼이 누르는 순간 저장 창을 먼저 열어 둔다(파일을 다 받은 뒤에 열면 팝업 차단에 걸린다)
+  addEventListener("message", onStoreMessage);
+  conn.win = window.__NL_STORE_WIN || null;
+  try { delete window.__NL_STORE_WIN; } catch {}
+  conn.watchT = setInterval(() => { if (conn.ready && (!conn.win || conn.win.closed)) { conn.ready = false; renderStore(); } }, 2000);
+  connect();
+  if (!conn.win && BASE) setSaved("팝업이 막혀 저장 창을 열지 못했습니다. 「저장 창 열기」를 누르거나 이 사이트의 팝업을 허용해 주세요.", true);
 
   window.NL_OVERLAY = {
-    toggle: () => (state.popup ? state.popup.focus() : setMin(!panel.hasAttribute("data-min"))),
+    // 버튼을 다시 누르면: 저장 창이 닫혀 있으면 다시 열고 패널을 보이고, 아니면 패널을 접고 편다
+    toggle: () => {
+      if (BASE && (!conn.win || conn.win.closed)) { openStore(); setMin(false); return; }
+      if (state.popup) state.popup.focus(); else setMin(!panel.hasAttribute("data-min"));
+    },
     apply: applyText,
     info: () => ({ root: state.root.tagName + (state.root.id ? `#${state.root.id}` : ""), paragraphs: state.paras.length,
       first: state.paras[0]?.text, last: state.paras.at(-1)?.text, side: state.side, width: state.width,
-      marks: state.marks.length, boxes: state.boxes.length, editing: state.editing, popped: !!state.popup }),
+      marks: state.marks.length, boxes: state.boxes.length, editing: state.editing, popped: !!state.popup, key: KEY, store: conn.ready }),
     destroy,
   };
 })();

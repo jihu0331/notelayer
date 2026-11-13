@@ -154,8 +154,10 @@
 
   // ── 웹페이지 위 표시 층: 읽던 페이지에 templates.js·prompt.js·overlay.js 를 불러온다 ──
   // 이미 떠 있으면 다시 불러오지 않고 패널만 접고 편다. 보안 설정이 엄격한 사이트는 외부 스크립트를 막아 동작하지 않는다
+  // 저장 창(store.html)은 누르는 순간 먼저 연다. 파일을 다 받은 다음에 열면 팝업 차단에 걸린다
   const base = location.origin + location.pathname.replace(/[^/]*$/, "");
   const overlayCode = `(()=>{if(window.NL_OVERLAY){window.NL_OVERLAY.toggle();return}const B=${JSON.stringify(base)};`
+    + "try{window.__NL_STORE_WIN=window.open(B+'store.html','notelayer-store','popup=yes,width=380,height=560,left='+Math.max(0,screen.availWidth-400)+',top=60')}catch(e){}"
     + "const L=f=>new Promise((ok,no)=>{const s=document.createElement('script');s.src=B+f+'?v='+Date.now();s.onload=ok;s.onerror=()=>no(f);document.head.appendChild(s)});"
     + "L('templates.js').then(()=>L('prompt.js')).then(()=>L('overlay.js'))"
     + ".catch(f=>alert('notelayer 파일('+f+')을 불러오지 못했습니다. 이 사이트의 보안 설정이 외부 스크립트를 막았을 수 있습니다.'))})()";
