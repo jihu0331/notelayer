@@ -1067,8 +1067,9 @@
   conn.win = window.__NL_STORE_WIN || null;
   try { delete window.__NL_STORE_WIN; } catch {}
   conn.watchT = setInterval(() => { if (conn.ready && (!conn.win || conn.win.closed)) { conn.ready = false; renderStore(); } }, 2000);
-  connect();
-  if (!conn.win && BASE) setSaved("팝업이 막혀 저장 창을 열지 못했습니다. 「저장 창 열기」를 누르거나 이 사이트의 팝업을 허용해 주세요.", true);
+  // 저장 창을 먼저 열지 않는 예전 즐겨찾기로 불렀으면 여기서 연다. 누른 지 몇 초 안이라 대개 팝업 차단에 걸리지 않는다.
+  // 막히면 openStore 가 「저장 창 열기」를 누르라고 알린다
+  if (!conn.win && BASE) openStore(); else connect();
 
   window.NL_OVERLAY = {
     // 버튼을 다시 누르면: 저장 창이 닫혀 있으면 다시 열고 패널을 보이고, 아니면 패널을 접고 편다
