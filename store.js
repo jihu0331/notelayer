@@ -1,8 +1,10 @@
 // notelayer 저장 창 — 웹페이지 위 표시 층(overlay.js)이 표시·설명을 이 PC 에 저장하고 다시 꺼낼 때 쓰는 창.
-// notelayer 주소에서 열리므로 저장한 내용은 표시를 단 사이트가 읽지 못한다. 서버로 보내지 않는다.
+// notelayer 주소에서 열리므로 다른 사이트는 저장한 내용을 꺼내 가지 못한다. 서버로 보내지 않는다.
+// 다만 표시는 그 페이지 위에 그려지므로, 그 사이트 자신은 자기 페이지에 단 메모를 볼 수 있다(화면 문구도 그렇게 쓴다).
 // - 기본: 이 브라우저의 notelayer 칸(IndexedDB)
 // - 선택: 사용자가 고른 PC 폴더에 페이지마다 파일 하나(크롬·엣지의 폴더 쓰기 기능). 동기화 폴더에 두면 다른 PC 에서도 열린다
 // 보안: 메시지를 보낸 창이 이 창을 연 페이지(opener)이고, 요청한 기록의 주소가 그 페이지와 같은 출처일 때만 응답한다.
+//       또 이 창 하나는 처음 인사한 페이지 한 개의 기록만 다룬다(같은 사이트의 다른 글 기록을 줄줄이 꺼내 가지 못하게).
 //       그래서 다른 사이트가 이 창을 열어도 남의 페이지 기록은 꺼내 가지 못한다. 받은 내용은 글자로만 그린다.
 (() => {
   const $ = (id) => document.getElementById(id);
@@ -38,10 +40,10 @@
     return p === "granted" ? dir : null;
   }
   function hash(s) { let h = 2166136261; for (const c of s) { h ^= c.codePointAt(0); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); }
-  // 파일 이름은 주소로 정해진다. 다른 PC 에서 같은 폴더를 연결하면 같은 이름으로 찾는다
+  // 파일 이름은 주소로 정해진다. 다른 PC 에서 같은 폴더를 연결하면 같은 이름으로 찾는다. 물음표 뒤는 이름에 넣지 않고 끝의 짧은 해시로만 구분한다
   function fileName(key) {
     const u = new URL(key);
-    const slug = `${u.host}${u.pathname}${u.search}`.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 80);
+    const slug = `${u.host}${u.pathname}`.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 80);
     return `${slug}-${hash(key)}.notelayer.json`;
   }
   async function writeFile(dir, rec) {
@@ -70,9 +72,10 @@
     if (!d || d.nl !== "page" || !window.opener || e.source !== window.opener) return;
     const reply = (msg) => e.source.postMessage({ nl: "store", id: d.id, ...msg }, e.origin);
     if (typeof d.key !== "string" || !sameOrigin(d.key, e.origin)) { reply({ type: "error", message: "요청한 주소가 이 페이지의 주소와 맞지 않습니다" }); return; }
+    if (current && d.key !== current.key) { reply({ type: "error", message: "이 저장 창은 다른 페이지와 연결되어 있습니다" }); return; }
     try {
       if (d.type === "hello") {
-        current = { key: d.key, url: httpUrl(d.url) || d.key, title: String(d.title || "").slice(0, 300) };
+        current = { key: d.key, url: httpUrl(d.key) || d.key, title: String(d.title || "").slice(0, 300) };
         reply({ type: "ready", folder: !!(await folder()) });
         render();
       } else if (d.type === "load") {
@@ -85,7 +88,7 @@
         reply({ type: "loaded", record: rec ? { data: rec.data, savedAt: rec.savedAt } : null, from });
         render();
       } else if (d.type === "save") {
-        const rec = { v: 1, key: d.key, url: httpUrl(d.url) || d.key, title: String(d.title || "").slice(0, 300), savedAt: Date.now(),
+        const rec = { v: 1, key: d.key, url: httpUrl(d.key) || d.key, title: String(d.title || "").slice(0, 300), savedAt: Date.now(),
           data: clean(d.data), paragraphs: Array.isArray(d.paragraphs) ? clean(d.paragraphs.filter((t) => typeof t === "string")) : [] };
         await putPage(rec);
         let file = false;

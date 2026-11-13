@@ -26,13 +26,15 @@
   const SCRIPT_SRC = document.currentScript?.src || window.NL_BASE || "";
   const BASE = SCRIPT_SRC ? SCRIPT_SRC.replace(/[?#].*$/, "").replace(/[^/]*$/, "") : "";
   const NL_ORIGIN = BASE ? new URL(BASE).origin : "";
-  // 같은 페이지 알아보기: 페이지가 밝힌 대표 주소(같은 사이트일 때만)에서 #뒤와 광고 추적 꼬리만 뗀다.
-  // 물음표 뒤(?id=3 같은 글 구분)는 남긴다
+  // 같은 페이지 알아보기: 페이지가 밝힌 대표 주소(같은 사이트일 때만)에서 #뒤, 광고 추적 꼬리, 열쇠처럼 보이는 꼬리를 뗀다.
+  // 물음표 뒤 글 구분(?id=3 같은 것)은 남긴다. 저장 기록·폴더 파일에는 이 정리한 주소만 남는다(비밀번호 재설정 링크의 열쇠 값 같은 것이 남지 않게)
   function pageKey() {
     let u = new URL(location.href);
     try { const c = new URL(document.querySelector('link[rel="canonical"]')?.href || "", location.href); if (c.origin === u.origin) u = c; } catch {}
     u.hash = "";
-    for (const k of [...u.searchParams.keys()]) if (/^(utm_|mc_)|^(fbclid|gclid|igshid|ref_src)$/i.test(k)) u.searchParams.delete(k);
+    for (const k of [...u.searchParams.keys()]) {
+      if (/^(utm_|mc_)|^(fbclid|gclid|igshid|ref_src)$/i.test(k) || /token|code|key|sig|session|sid|auth|pass|secret|credential|ticket|otp|nonce|state|jwt/i.test(k)) u.searchParams.delete(k);
+    }
     const q = u.searchParams.toString();
     return u.origin + u.pathname + (q ? `?${q}` : "");
   }
@@ -853,7 +855,8 @@
   const KEY = pageKey();
   const conn = { win: null, ready: false, seq: 0, pending: new Map(), helloT: 0, watchT: 0, folder: false, dirty: false };
   const fmtTime = (t) => new Date(t).toLocaleString();
-  const msgFor = (type, id, extra = {}) => ({ nl: "page", type, id, key: KEY, url: location.href, title: document.title, ...extra });
+  // 주소는 정리한 KEY 만 보낸다(지금 주소창의 전체 주소는 보내지 않는다)
+  const msgFor = (type, id, extra = {}) => ({ nl: "page", type, id, key: KEY, title: document.title, ...extra });
   function setSaved(text, err = false) { savedMsg.className = err ? "msg err" : "msg"; savedMsg.textContent = text; }
   function openStore() {
     if (!BASE) return null;
@@ -921,7 +924,7 @@
     storeOpenBtn.hidden = !BASE || !!(conn.ready && live);
     storeState.className = conn.ready && live ? "msg" : "msg err";
     storeState.textContent = !BASE ? "저장 창 주소를 알 수 없어 저장할 수 없습니다. 즐겨찾기 버튼으로 다시 열어 주세요."
-      : conn.ready && live ? `● 저장 창과 연결됨 — 이 PC 에 저장합니다${conn.folder ? "(고른 폴더에도 파일로)" : ""}. 이 사이트는 저장한 내용을 읽지 못합니다.`
+      : conn.ready && live ? `● 저장 창과 연결됨 — 이 PC 에 저장합니다${conn.folder ? "(고른 폴더에도 파일로)" : ""}. 서버로 보내지 않고, 다른 사이트는 이 메모를 볼 수 없습니다.`
       : live ? "○ 저장 창과 연결하는 중…"
       : `○ 저장 창이 닫혀 있어 저장되지 않습니다${conn.dirty ? "(저장하지 않은 변경이 있습니다)" : ""}.`;
   }
