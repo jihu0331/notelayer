@@ -72,10 +72,13 @@
     if (!d || d.nl !== "page" || !window.opener || e.source !== window.opener) return;
     const reply = (msg) => e.source.postMessage({ nl: "store", id: d.id, ...msg }, e.origin);
     if (typeof d.key !== "string" || !sameOrigin(d.key, e.origin)) { reply({ type: "error", message: "요청한 주소가 이 페이지의 주소와 맞지 않습니다" }); return; }
+    // 닫힌 쪽이 기본: 인사로 페이지가 정해지기 전에는 다른 요청을 받지 않고, 정해진 다음에는 그 페이지 하나만 다룬다
+    if (!current && d.type !== "hello") { reply({ type: "error", message: "아직 연결되지 않았습니다" }); return; }
     if (current && d.key !== current.key) { reply({ type: "error", message: "이 저장 창은 다른 페이지와 연결되어 있습니다" }); return; }
     try {
       if (d.type === "hello") {
-        current = { key: d.key, url: httpUrl(d.key) || d.key, title: String(d.title || "").slice(0, 300) };
+        // 연결된 다음 다시 오는 인사(같은 페이지가 되풀이해 보낸 것)는 연결을 바꾸지 않고 답만 한다
+        current ??= { key: d.key, url: httpUrl(d.key) || d.key, title: String(d.title || "").slice(0, 300) };
         reply({ type: "ready", folder: !!(await folder()) });
         render();
       } else if (d.type === "load") {
