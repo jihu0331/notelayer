@@ -30,6 +30,7 @@ http.createServer((req, res) => {
   let rel;
   try { rel = decodeURIComponent(new URL(req.url, "http://localhost").pathname); } catch { res.writeHead(400); res.end(); return; }
   if (rel === "/") rel = "/index.html";
+  if (rel === "/favicon.ico") { res.writeHead(204, NO_CACHE); res.end(); return; } // 브라우저가 알아서 찾는 아이콘 — 없다고 오류를 남기지 않게
   const file = path.resolve(ROOT, `.${rel}`);
   const ok = SERVE.test(rel) && file.startsWith(ROOT + path.sep) && fs.existsSync(file) && fs.statSync(file).isFile();
   if (!ok) { res.writeHead(404, NO_CACHE); res.end("not found"); return; }

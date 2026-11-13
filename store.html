@@ -37,6 +37,7 @@
   <p>웹페이지 위에 단 표시·설명을 이 PC 에 저장합니다. 서버로 보내지 않고, 다른 사이트는 이 메모를 꺼내 가지 못합니다(표시는 그 페이지 위에 그려지므로 그 사이트 자신은 볼 수 있습니다). 저장하려면 이 창을 열어 두세요.</p>
 </header>
 <main>
+  <p id="status" class="muted" role="status"></p>
   <section id="cur">
     <h2>지금 페이지</h2>
     <div id="curBody" class="muted">표시 층과 연결을 기다리는 중…</div>
@@ -50,7 +51,8 @@
     <h2>저장한 페이지 <span id="count" class="muted"></span></h2>
     <ul id="list"></ul>
     <div class="row">
-      <label><button type="button" id="importBtn">파일 불러오기</button><input type="file" id="importFile" accept=".json,application/json" multiple hidden></label>
+      <button type="button" id="importBtn">파일 불러오기</button>
+      <input type="file" id="importFile" accept=".json,application/json" multiple hidden>
     </div>
   </section>
 </main>

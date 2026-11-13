@@ -139,13 +139,18 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
 
+  // 화면은 블로그 쪽 메시지가 올 때마다 다시 그린다. 내용이 그대로인 칸은 다시 만들지 않는다 —
+  // 누르는 도중에 버튼이 새것으로 바뀌면 클릭이 사라졌다(창이 막 열려 연결 인사가 여러 번 오는 동안)
+  const drawn = {};
+  const changed = (part, sig) => (drawn[part] === sig ? false : ((drawn[part] = sig), true));
   async function render() {
     const pages = (await allPages().catch(() => [])).sort((a, b) => b.savedAt - a.savedAt);
     await folder().catch(() => null);
+    const dirName = folderState === "none" ? "" : (await getMeta("dir").catch(() => null))?.name || "";
     // 지금 페이지
     const cur = current && pages.find((p) => p.key === current.key);
     const opener = window.opener;
-    $("curBody").replaceChildren(
+    if (changed("cur", JSON.stringify([current?.key, current?.title, !!opener, opener?.closed, cur?.savedAt, cur && counts(cur.data)]))) $("curBody").replaceChildren(
       !current ? (opener ? "표시 층과 연결을 기다리는 중…" : "웹페이지에서 「이 페이지 위에 표시하기」를 누르면 이 창이 그 페이지와 연결됩니다.")
         : el("div", {}, el("div", { class: "title" }, current.title || current.key),
           el("div", { class: cur ? "muted ok" : "muted" }, cur
@@ -154,6 +159,11 @@
           opener?.closed ? el("div", { class: "muted" }, "원래 페이지가 닫혔습니다. 이 창은 닫아도 됩니다.") : null,
           cur ? el("div", { class: "row" }, el("button", { onclick: () => download(cur) }, "이 페이지 파일로 내려받기")) : null));
     // 폴더
+    if (changed("folder", JSON.stringify([canFolder, folderState, dirName]))) renderFolder(dirName);
+    // 목록
+    if (changed("list", JSON.stringify([current?.key, pages.map((p) => [p.key, p.savedAt, p.title])]))) renderList(pages);
+  }
+  function renderFolder(dirName) {
     const btns = [];
     if (!canFolder) {
       $("folderBody").textContent = "이 브라우저는 폴더에 직접 쓰는 기능이 없습니다(크롬·엣지에서 됩니다). 대신 「이 페이지 파일로 내려받기」와 「파일 불러오기」를 쓰세요.";
@@ -161,15 +171,16 @@
       $("folderBody").textContent = "폴더를 한 번 고르면 저장할 때마다 페이지마다 파일 하나씩 그 폴더에도 씁니다. 브라우저 기록을 지워도 남고, OneDrive·구글 드라이브 같은 동기화 폴더에 두면 다른 PC 에서도 같은 표시가 열립니다.";
       btns.push(el("button", { class: "primary", onclick: pickFolder }, "폴더 고르기"));
     } else {
-      const dir = await getMeta("dir");
+      const label = dirName ? `「${dirName}」` : "고른";
       $("folderBody").replaceChildren(el("span", { class: folderState === "granted" ? "ok" : "err" },
-        folderState === "granted" ? `${dir.name ? `「${dir.name}」` : "고른"} 폴더에도 저장하고 있습니다.` : `${dir.name ? `「${dir.name}」` : "고른"} 폴더를 쓰려면 다시 허용해야 합니다(브라우저를 새로 열면 다시 묻습니다).`));
+        folderState === "granted" ? `${label} 폴더에도 저장하고 있습니다.` : `${label} 폴더를 쓰려면 다시 허용해야 합니다(브라우저를 새로 열면 다시 묻습니다).`));
       if (folderState !== "granted") btns.push(el("button", { class: "primary", onclick: async () => { await folder(true); await syncFolder(); render(); } }, "폴더 다시 허용"));
       btns.push(el("button", { onclick: pickFolder }, "다른 폴더로 바꾸기"));
       btns.push(el("button", { onclick: async () => { await delMeta("dir"); render(); } }, "연결 끊기"));
     }
     $("folderBtns").replaceChildren(...btns);
-    // 목록
+  }
+  function renderList(pages) {
     $("count").textContent = pages.length ? `${pages.length}개` : "";
     $("list").replaceChildren(...(pages.length ? pages.map((p) => {
       const url = httpUrl(p.url);
@@ -190,14 +201,21 @@
     }) : [el("li", { class: "muted" }, "아직 없습니다.")]));
   }
 
+  // 버튼을 누른 결과는 무엇이든 창 위쪽에 글로 남긴다(전에는 취소·실패가 조용히 지나가 눌러도 반응이 없는 것처럼 보였다)
+  function status(text, err = false) { $("status").className = err ? "muted err" : "muted ok"; $("status").textContent = text; }
   async function pickFolder() {
+    if (!canFolder) { status("이 브라우저는 폴더에 직접 쓰는 기능이 없습니다(크롬·엣지에서 됩니다).", true); return; }
+    status("폴더 고르는 창을 여는 중… (안 보이면 다른 창 뒤에 열렸을 수 있습니다)");
     try {
       const dir = await window.showDirectoryPicker({ id: "notelayer", mode: "readwrite" });
       await putMeta("dir", dir);
       await folder(true);
       await syncFolder();
+      status(folderState === "granted" ? `「${dir.name}」 폴더를 연결했습니다. 이제 저장할 때마다 이 폴더에도 파일로 씁니다.` : `「${dir.name}」 폴더에 쓰기 허락을 받지 못했습니다. 「폴더 다시 허용」을 눌러 주세요.`, folderState !== "granted");
     } catch (err) {
-      if (err?.name !== "AbortError") alert(`폴더를 연결하지 못했습니다: ${err?.message || err}`);
+      status(err?.name === "AbortError"
+        ? "폴더 고르기가 취소됐습니다. 폴더 창이 뜨지 않았다면 이 창을 한 번 누른 다음 다시 눌러 보세요."
+        : `폴더를 연결하지 못했습니다: ${err?.name || ""} ${err?.message || err}`, true);
     }
     render();
   }
@@ -211,7 +229,11 @@
     }
   }
 
-  $("importBtn").onclick = () => $("importFile").click();
+  $("importBtn").onclick = () => {
+    status("파일 고르는 창을 여는 중… (안 보이면 다른 창 뒤에 열렸을 수 있습니다)");
+    try { $("importFile").click(); } catch (err) { status(`파일 고르는 창을 열지 못했습니다: ${err?.message || err}`, true); }
+  };
+  $("importFile").oncancel = () => status("파일 고르기가 취소됐습니다.");
   $("importFile").onchange = async (e) => {
     let n = 0;
     for (const f of e.target.files) {
@@ -222,8 +244,9 @@
         if (!old || (old.savedAt || 0) <= (rec.savedAt || 0)) { await putPage({ ...rec, data: clean(rec.data), savedAt: Number(rec.savedAt) || Date.now() }); n++; }
       } catch {}
     }
+    const total = e.target.files.length;
     e.target.value = "";
-    alert(`${n}개 페이지의 표시를 불러왔습니다.`);
+    status(`파일 ${total}개 중 ${n}개 페이지의 표시를 불러왔습니다${n < total ? "(notelayer 저장 파일이 아니거나 더 새 기록이 이미 있는 것은 건너뛰었습니다)" : ""}.`, n === 0);
     render();
   };
 
