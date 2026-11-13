@@ -164,7 +164,10 @@
     + `try{window.__NL_STORE_WIN=window.open(B+'store.html','${storeName}','popup=yes,width=380,height=560,left='+Math.max(0,screen.availWidth-400)+',top=60')}catch(e){}`
     + "const L=f=>new Promise((ok,no)=>{const s=document.createElement('script');s.src=B+f+'?v='+Date.now();s.onload=ok;s.onerror=()=>no(f);document.head.appendChild(s)});"
     + "L('templates.js').then(()=>L('prompt.js')).then(()=>L('overlay.js'))"
-    + ".catch(f=>alert('notelayer 파일('+f+')을 불러오지 못했습니다. 이 사이트의 보안 설정이 외부 스크립트를 막았을 수 있습니다.'))})()";
+    + (isLocal
+      // 시험용: 막히는 원인은 대개 서버가 꺼져 있거나, 크롬이 이 사이트의 로컬 네트워크 접근을 허락받지 못한 것이다
+      ? ".catch(f=>alert('notelayer 시험 서버의 파일('+f+')을 불러오지 못했습니다.\\n① 시험 서버(node dev/serve.js)가 켜져 있는지\\n② 크롬이 이 사이트에 「로컬 네트워크 액세스」를 허용했는지(주소창 왼쪽 아이콘 → 사이트 설정) 확인해 주세요.'))})()"
+      : ".catch(f=>alert('notelayer 파일('+f+')을 불러오지 못했습니다. 이 사이트의 보안 설정이 외부 스크립트를 막았을 수 있습니다.'))})()");
   $("overlayBookmarklet").href = `javascript:${encodeURIComponent(overlayCode)}`;
   $("overlayBookmarklet").onclick = $("bookmarklet").onclick;
 
