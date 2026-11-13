@@ -152,6 +152,16 @@
     ? "지금은 파일로 연 화면이라, 웹페이지가 이 창을 열 수 없어 이 버튼이 동작하지 않습니다. 인터넷 주소로 연 notelayer(예: README 의 공개 데모)에서 버튼을 만드세요."
     : "글이 article·main 영역에 있는 블로그·문서 사이트에서 잘 됩니다. 로그인해야 보이는 글도 지금 보이는 만큼 가져옵니다. 가져온 글은 이 브라우저에만 저장됩니다.";
 
+  // ── 웹페이지 위 표시 층: 읽던 페이지에 templates.js·prompt.js·overlay.js 를 불러온다 ──
+  // 이미 떠 있으면 다시 불러오지 않고 패널만 접고 편다. 보안 설정이 엄격한 사이트는 외부 스크립트를 막아 동작하지 않는다
+  const base = location.origin + location.pathname.replace(/[^/]*$/, "");
+  const overlayCode = `(()=>{if(window.NL_OVERLAY){window.NL_OVERLAY.toggle();return}const B=${JSON.stringify(base)};`
+    + "const L=f=>new Promise((ok,no)=>{const s=document.createElement('script');s.src=B+f+'?v='+Date.now();s.onload=ok;s.onerror=()=>no(f);document.head.appendChild(s)});"
+    + "L('templates.js').then(()=>L('prompt.js')).then(()=>L('overlay.js'))"
+    + ".catch(f=>alert('notelayer 파일('+f+')을 불러오지 못했습니다. 이 사이트의 보안 설정이 외부 스크립트를 막았을 수 있습니다.'))})()";
+  $("overlayBookmarklet").href = `javascript:${encodeURIComponent(overlayCode)}`;
+  $("overlayBookmarklet").onclick = $("bookmarklet").onclick;
+
   // 북마클릿이 연 창(#import)에서만, 첫 번째 본문 하나만 받는다
   const importMode = location.hash === "#import";
   let imported = false;
