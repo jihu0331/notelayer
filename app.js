@@ -259,7 +259,7 @@ function startNotelayer() {
     $("editSwitch").setAttribute("aria-checked", String(ui.editing));
 
     if (ui.focus?.startsWith("box:") && !tpl.boxes[ui.focus.slice(4)]) ui.focus = null;
-    if (ui.concept && !conceptData().nodes.some((n) => n.id === ui.concept)) { ui.concept = null; if (ui.focus?.startsWith("concept:")) ui.focus = null; }
+    if (ui.concept && !conceptData().nodes.some((n) => n.id === ui.concept)) ui.concept = null;
     // 출처와 범례: 모양의 뜻은 고정, 이름만 템플릿이 정한다
     $("meta").textContent = `원문: ${d.source} · 원문은 고치지 않고 그 위에 층만 얹는다`;
     const legend = $("legend");
@@ -349,9 +349,8 @@ function startNotelayer() {
       if (shows("wave")) CSS.highlights.set("mk-wave", new Highlight(...ranges.wave));
       if (shows("mine")) CSS.highlights.set("mk-mine", new Highlight(...mine));
       if (selLoc) CSS.highlights.set("mk-sel", new Highlight(toRange(selLoc)));
-      const focused = f === "mine" ? mine : f?.startsWith("concept:") ? conceptRanges(f.slice(8)) : ranges[f] ?? [];
+      const focused = f === "mine" ? mine : ranges[f] ?? [];
       if (f) CSS.highlights.set("mk-focus", new Highlight(...focused));
-      if (f?.startsWith("concept:")) CSS.highlights.set("mk-concept", new Highlight(...focused));
     }
     circleRanges = shows("circle") ? ranges.circle : [];
     article.classList.toggle("focus-mode", !!f);
@@ -382,10 +381,6 @@ function startNotelayer() {
   }
   function firstFocusedTop() {
     const f = ui.focus;
-    if (f.startsWith("concept:")) {
-      const tops = conceptRanges(f.slice(8)).map((r) => r.getBoundingClientRect().top);
-      return tops.length ? Math.min(...tops) : null;
-    }
     if (f.startsWith("box:") || f === "mine") return article.querySelector(".box:not(.dim)")?.getBoundingClientRect().top ?? null;
     const { ann } = cur();
     const m = visibleMarks(ann).filter((x) => x.kind === f).map((x) => locate(x.p, x.quote, x.at)).filter(Boolean)
@@ -442,31 +437,11 @@ function startNotelayer() {
     if (!ann.concepts) { const { source, ...rest } = conceptData(); ann.concepts = structuredClone(rest); }
     return ann.concepts;
   }
-  function clearConcept() {
-    if (ui.concept) { ui.concept = null; if (ui.focus?.startsWith("concept:")) ui.focus = null; paintMarks(); }
-  }
+  function clearConcept() { ui.concept = null; }
+  // 개념을 고르면 요약 칸에서 핵심 내용만 펼친다(본문은 건드리지 않는다)
   function selectConcept(id) {
-    const on = ui.concept !== id;
-    ui.concept = on ? id : null;
-    ui.focus = on ? `concept:${id}` : null; // 본문에서 그 개념이 나오는 자리만 또렷하게
-    paintMarks();
-  }
-  // 본문에서 개념 낱말이 나오는 모든 자리
-  function conceptRanges(id) {
-    const n = conceptData().nodes.find((x) => x.id === id);
-    if (!n) return [];
-    const words = (n.match?.length ? n.match : [n.term]).filter((w) => w && w.length > 1);
-    const out = [];
-    for (const p of article.querySelectorAll("p[data-p]")) {
-      const node = p.firstChild;
-      if (!node || node.nodeType !== Node.TEXT_NODE) continue;
-      const lower = node.data.toLowerCase();
-      for (const w of words) {
-        const wl = w.toLowerCase();
-        for (let i = lower.indexOf(wl); i >= 0; i = lower.indexOf(wl, i + wl.length)) out.push(toRange({ node, start: i, end: i + w.length }));
-      }
-    }
-    return out;
+    ui.concept = ui.concept !== id ? id : null;
+    renderSummary();
   }
   function descendants(nodes, id) {
     const out = new Set([id]);
@@ -514,7 +489,7 @@ function startNotelayer() {
     body.append(map);
     body.append(el("p", "sum-foot", c.source === "auto"
       ? "개념 관계 정보가 없어 핵심어만 나란히 두었습니다. \"AI 표시 만들기\"로 관계(하위·동등·해결 등)를 받을 수 있습니다."
-      : "개념 이름·관계·풀이는 AI 가 쓴 것이라 틀릴 수 있습니다. 개념을 누르면 핵심 내용이 펼쳐지고, 본문에서 그 개념이 나오는 자리만 강조됩니다. 수정 모드에서 상위 개념과 역할을 바꿀 수 있습니다."));
+      : "개념 이름·관계·풀이는 AI 가 쓴 것이라 틀릴 수 있습니다. 개념을 누르면 핵심 내용이 펼쳐집니다. 수정 모드에서 상위 개념과 역할을 바꿀 수 있습니다."));
   }
   function nodeEl(n, c, showRole = true) {
     const li = el("li");
