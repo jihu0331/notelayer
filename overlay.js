@@ -112,14 +112,60 @@
     indexCache.set(el, idx);
     return idx;
   }
-  function rangeIn(el, quote) {
-    const q = squash(quote), idx = textIndex(el);
-    const at = q ? idx.text.indexOf(q) : -1;
-    if (at < 0) return null;
-    const [sn, so] = idx.map[at], [en, eo] = idx.map[at + q.length - 1];
+  // 표시마다 앞뒤 글자(공백 뺀 32자)를 함께 저장한다(웹 주석 표준의 「인용 + 앞뒤 글자」 방식)
+  const CTX = 32;
+  function occurrences(text, q) {
+    const out = [];
+    for (let i = q ? text.indexOf(q) : -1; i >= 0; i = text.indexOf(q, i + 1)) out.push(i);
+    return out;
+  }
+  const tailMatch = (a, b) => { let n = 0; while (n < a.length && n < b.length && a[a.length - 1 - n] === b[b.length - 1 - n]) n++; return n; };
+  const headMatch = (a, b) => { let n = 0; while (n < a.length && n < b.length && a[n] === b[n]) n++; return n; };
+  function spanRange(idx, at, len) {
+    const [sn, so] = idx.map[at], [en, eo] = idx.map[at + len - 1];
     const r = document.createRange();
     r.setStart(sn, so); r.setEnd(en, eo + 1);
     return r;
+  }
+  // 구절 찾기. 앞뒤 글자(ctx)가 있으면
+  // - 같은 구절이 여러 번 나올 때 앞뒤가 가장 잘 맞는 자리를 고르고
+  // - 구절이 고쳐져 그대로는 없으면(fuzzy) 앞뒤 글자 사이를 새 자리로 잡는다(moved)
+  function locate(el, quote, ctx = null, fuzzy = true) {
+    const idx = textIndex(el), q = squash(quote);
+    const hits = occurrences(idx.text, q);
+    if (hits.length) {
+      let best = hits[0];
+      if (ctx && hits.length > 1) {
+        let top = -1;
+        for (const at of hits) {
+          const score = tailMatch(idx.text.slice(Math.max(0, at - CTX), at), ctx.prefix || "") + headMatch(idx.text.slice(at + q.length, at + q.length + CTX), ctx.suffix || "");
+          if (score > top) { top = score; best = at; }
+        }
+      }
+      return { range: spanRange(idx, best, q.length), moved: false };
+    }
+    const pre = (ctx?.prefix || "").slice(-10), suf = (ctx?.suffix || "").slice(0, 10);
+    if (fuzzy && pre.length >= 6 && suf.length >= 6) {
+      const maxLen = Math.max(q.length * 2, q.length + 30);
+      for (const p of occurrences(idx.text, pre)) {
+        const start = p + pre.length, end = idx.text.indexOf(suf, start);
+        if (end > start && end - start <= maxLen) return { range: spanRange(idx, start, end - start), moved: true };
+      }
+    }
+    return null;
+  }
+  // 저장할 때 표시의 앞뒤 글자를 뽑는다
+  function contextOf(range) {
+    const i = paraIndexOf(range.startContainer);
+    const idx = textIndex(i >= 0 ? state.paras[i].el : state.root);
+    let first = -1, last = -1;
+    for (let k = 0; k < idx.map.length; k++) {
+      const [node, off] = idx.map[k];
+      let inside = false;
+      try { inside = range.isPointInRange(node, off) && !(node === range.endContainer && off === range.endOffset); } catch {}
+      if (inside) { if (first < 0) first = k; last = k; } else if (first >= 0) break;
+    }
+    return first < 0 ? {} : { prefix: idx.text.slice(Math.max(0, first - CTX), first), suffix: idx.text.slice(last + 1, last + 1 + CTX) };
   }
 
   // ── 상태 ──
@@ -128,6 +174,8 @@
     tpl: Object.keys(TEMPLATES)[0],
     root: null, paras: [],
     marks: [],            // { id, kind, quote, range, mine }
+    orphans: [],          // 제자리를 잃은 표시 { kind, quote, p, prefix, suffix, mine } — 버리지 않고 저장해 두었다가 다시 붙인다
+    attaching: null,      // 다시 붙이는 중인 orphan
     boxes: [],            // { id, label, text, pre, answer, el, mine }
     concepts: null,
     show: { circle: true, highlight: true, wave: true, boxes: true },
@@ -147,21 +195,27 @@
   function anchor(result) {
     const P = state.paras, n = P.length;
     const at = (i) => clamp(i, 0, n - 1);
-    const findPara = (quote, hint, spread) => {
-      const order = [hint];
-      for (let d = 1; d <= spread; d++) order.push(hint - d, hint + d);
-      for (const i of order) if (i >= 0 && i < n && rangeIn(P[i].el, quote)) return i;
-      for (let i = 0; i < n; i++) if (rangeIn(P[i].el, quote)) return i;
-      return -1;
+    const everywhere = Array.from({ length: n }, (_, i) => i);
+    // 가까운 문단에서 그대로 → 가까운 문단에서 앞뒤 글자로 → 전체에서 그대로 → 전체에서 앞뒤 글자로
+    const findPara = (quote, hint, spread, ctx = null) => {
+      const near = [hint];
+      for (let d = 1; d <= spread; d++) near.push(hint - d, hint + d);
+      for (const scope of [near.filter((i) => i >= 0 && i < n), everywhere]) {
+        for (const fuzzy of ctx ? [false, true] : [false]) {
+          for (const i of scope) { const hit = locate(P[i].el, quote, ctx, fuzzy); if (hit) return { i, hit }; }
+        }
+      }
+      return null;
     };
+    const ctxOf = (m) => (typeof m.prefix === "string" || typeof m.suffix === "string" ? { prefix: String(m.prefix || ""), suffix: String(m.suffix || "") } : null);
     const raw = (Array.isArray(result.marks) ? result.marks : [])
       .filter((m) => m && KINDS.includes(m.kind) && typeof m.quote === "string" && squash(m.quote));
     const pOf = (m) => (Number.isFinite(Number(m.p)) ? Number(m.p) : 1);
     const learned = [];
     for (const m of raw) {
       if (squash(m.quote).length < 12) continue;
-      const i = findPara(m.quote, at(pOf(m) - 1), 0);
-      if (i >= 0) learned.push([pOf(m), i]);
+      const f = findPara(m.quote, at(pOf(m) - 1), 0, ctxOf(m));
+      if (f && !f.hit.moved) learned.push([pOf(m), f.i]);
     }
     const guess = (p) => {
       if (!learned.length) return at(p - 1);
@@ -170,11 +224,14 @@
       return at(p - 1 + (best[1] - (best[0] - 1)));
     };
     const marks = [], lost = [];
+    let moved = 0;
     for (const m of raw) {
-      const i = findPara(m.quote, guess(pOf(m)), 3);
-      const r = i >= 0 ? rangeIn(P[i].el, m.quote) : rangeIn(state.root, m.quote); // 문단 경계를 넘는 인용은 본문 전체에서
-      if (r) marks.push({ id: uid(), kind: m.kind, quote: m.quote, range: r, mine: !!m.mine });
-      else lost.push(m.quote);
+      const ctx = ctxOf(m);
+      const hit = findPara(m.quote, guess(pOf(m)), 3, ctx)?.hit || locate(state.root, m.quote, ctx); // 문단 경계를 넘는 인용은 본문 전체에서
+      if (hit) {
+        if (hit.moved) moved++;
+        marks.push({ id: uid(), kind: m.kind, quote: hit.moved ? tidy(hit.range.toString()) : m.quote, range: hit.range, mine: !!m.mine });
+      } else lost.push({ kind: m.kind, quote: m.quote, p: pOf(m), ...(ctx || {}), mine: !!m.mine });
     }
     const labels = Object.keys(TEMPLATES[state.tpl].boxes);
     const boxes = (Array.isArray(result.boxes) ? result.boxes : [])
@@ -184,7 +241,7 @@
         pre: typeof b.pre === "string" && b.pre.trim() ? b.pre : "", answer: typeof b.answer === "string" ? b.answer.trim() : "",
         el: P[guess(Number.isFinite(Number(b.p)) ? Number(b.p) : 1)].el, mine: !!b.mine,
       }));
-    return { marks, boxes, lost, total: raw.length };
+    return { marks, boxes, lost, moved, total: raw.length };
   }
 
   function cleanConcepts(c) {
@@ -201,14 +258,17 @@
   }
 
   // ── 저장: 고친 결과까지 페이지 주소별로 남긴다. p 는 이 페이지 문단 번호라 다시 열면 그대로 맞는다 ──
-  function serialize() {
+  function serialize({ exporting = false } = {}) {
     return {
-      marks: state.marks.map((m) => ({ p: paraIndexOf(m.range.startContainer) + 1 || 1, kind: m.kind, quote: m.quote, ...(m.mine ? { mine: true } : {}) })),
+      marks: [
+        ...state.marks.map((m) => ({ p: paraIndexOf(m.range.startContainer) + 1 || 1, kind: m.kind, quote: m.quote, ...contextOf(m.range), ...(m.mine ? { mine: true } : {}) })),
+        ...(exporting ? [] : state.orphans.map(({ mine, ...o }) => ({ ...o, ...(mine ? { mine: true } : {}), orphan: true }))),
+      ],
       boxes: sortedBoxes().map((b) => ({ p: boxOrder(b) + 1 || 1, label: b.label, text: b.text, ...(b.pre ? { pre: b.pre } : {}), ...(b.answer ? { answer: b.answer } : {}), ...(b.mine ? { mine: true } : {}) })),
       ...(state.concepts ? { concepts: state.concepts } : {}),
     };
   }
-  const hasData = () => !!(state.marks.length || state.boxes.length || state.concepts);
+  const hasData = () => !!(state.marks.length || state.orphans.length || state.boxes.length || state.concepts);
   let saveTimer = 0;
   // 고칠 때마다 저장 창에 보낸다. 저장 창이 닫혀 있으면 「저장하지 않은 변경」으로 남겨 두었다가 다시 연결되면 보낸다
   function save() {
@@ -293,6 +353,14 @@
     .savebar .msg:empty { display: none; }
     .savebar button[hidden] { display: none; }
     .savebar button { margin: 4px 0 2px; }
+    .orphans { border: 1px solid #fde68a; background: #fffbeb; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; font-size: 12px; }
+    .o-head { font-weight: 600; color: #92400e; }
+    .o-sub { font-weight: 400; color: #78716c; }
+    .o-attach { margin: 6px 0; color: #9a3412; }
+    .o-item { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+    .o-item.on { background: #fef3c7; border-radius: 6px; }
+    .o-q { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .o-item button { font-size: 11px; padding: 2px 8px; }
     .legend { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
     .legend button { font-size: 12px; padding: 3px 8px; border-radius: 999px; }
     .legend button[aria-pressed="false"] { opacity: .4; }
@@ -459,7 +527,8 @@
   const legend = h("div", { class: "legend" });
   const tabs = h("div", { class: "tabs" });
   const list = h("div");
-  const resultBox = h("div", { hidden: true }, legend, tabs, list);
+  const orphanBox = h("div");
+  const resultBox = h("div", { hidden: true }, orphanBox, legend, tabs, list);
   const editBtn = h("button", { class: "icon toggle", title: "수정 모드", "aria-pressed": "false", onclick: () => setEditing(!state.editing) }, "✎ 수정");
   const sideBtn = h("button", { class: "icon dock-only", title: "패널을 반대쪽으로", onclick: () => { state.side = state.side === "left" ? "right" : "left"; saveUi(); placePanel(); } }, "⇆");
   const popBtn = h("button", { class: "icon", title: "별도 창으로 떼어 내기", onclick: () => (state.popup ? dockBack(true) : popOut()) }, "⧉");
@@ -555,12 +624,12 @@
     setMsg(copyMsg, ok ? `복사했습니다(${text.length.toLocaleString()}자). 쓰는 AI 에 붙여 넣으세요.` : "복사하지 못했습니다.", !ok);
   }
   async function copyResult() {
-    const ok = await copyText(JSON.stringify(serialize()));
+    const ok = await copyText(JSON.stringify(serialize({ exporting: true })));
     setMsg(applyMsg, ok ? "지금 표시·설명을 JSON 으로 복사했습니다. notelayer 화면의 「AI 표시 만들기」 답 칸에 붙여 넣어도 됩니다." : "복사하지 못했습니다.", !ok);
   }
   function clearSaved() {
     if (!confirm("이 페이지의 표시·설명을 모두 지울까요? 저장한 것도 지워집니다.")) return;
-    state.marks = []; state.boxes = []; state.concepts = null;
+    state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.concepts = null;
     paint(); drawLayer(); renderResult(); save();
     setMsg(applyMsg, "모두 지웠습니다.");
   }
@@ -578,26 +647,32 @@
       && !confirm("지금 있는 AI 표시·설명을 이 답으로 바꿀까요? 내가 단 표시와 설명은 남습니다.")) return null;
     const a = anchor(result);
     state.marks = restored ? a.marks : [...state.marks.filter((m) => m.mine), ...a.marks];
+    state.orphans = restored ? a.lost : state.orphans.filter((o) => o.mine);
+    state.attaching = null;
     state.boxes = restored ? a.boxes : [...state.boxes.filter((b) => b.mine), ...a.boxes];
     const c = cleanConcepts(result.concepts);
     if (c || restored) state.concepts = c;
     paint(); drawLayer(); renderResult();
-    if (!restored) save();
+    if (!restored || a.moved) save(); // 자리를 다시 잡은 표시는 새 구절·앞뒤 글자로 저장해 둔다
     const placed = a.marks.length;
     const parts = [`${restored ? "저장한 " : ""}표시 ${placed}/${a.total}개, 설명 ${a.boxes.length}개를 얹었습니다`];
     if (state.concepts) parts.push(`개념 ${state.concepts.nodes.length}개`);
-    if (a.lost.length) parts.push(`\n원문에서 찾지 못한 표시 ${a.lost.length}개: ${a.lost.slice(0, 4).map((q) => `「${q}」`).join(", ")}${a.lost.length > 4 ? " …" : ""}`);
+    if (a.moved) parts.push(`글이 바뀌어 자리를 다시 잡은 표시 ${a.moved}개`);
+    if (a.lost.length) parts.push(restored
+      ? `\n제자리를 잃은 표시 ${a.lost.length}개 — 원문이 바뀌어 찾지 못했습니다. 패널 위쪽 목록에서 다시 붙이거나 지울 수 있습니다`
+      : `\n원문에서 찾지 못한 표시 ${a.lost.length}개: ${a.lost.slice(0, 4).map((x) => `「${x.quote}」`).join(", ")}${a.lost.length > 4 ? " …" : ""}`);
     if (!window.CSS?.highlights) parts.push("\n이 브라우저는 형광펜·물결 칠하기를 지원하지 않습니다(크롬 계열 권장).");
     setMsg(applyMsg, parts.join(" · "));
     steps.open = false;
-    return { placed, total: a.total, boxes: a.boxes.length, lost: a.lost };
+    return { placed, total: a.total, boxes: a.boxes.length, lost: a.lost.map((x) => x.quote), moved: a.moved, orphans: state.orphans.length };
   }
 
   let tab = "boxes";
   function renderResult() {
-    const has = state.marks.length || state.boxes.length || state.concepts;
+    const has = hasData();
     resultBox.hidden = !has;
     if (!has) return;
+    renderOrphans();
     const t = TEMPLATES[state.tpl];
     const count = (k) => state.marks.filter((m) => m.kind === k).length;
     const toggle = (key, ...label) => h("button", { "aria-pressed": String(state.show[key]),
@@ -612,6 +687,36 @@
       h("button", { "aria-selected": String(tab === "boxes"), onclick: () => { tab = "boxes"; renderResult(); } }, `설명 ${state.boxes.length}`),
       h("button", { "aria-selected": String(tab === "concepts"), onclick: () => { tab = "concepts"; renderResult(); } }, `요약${nodes.length ? ` (개념 ${nodes.length})` : ""}`));
     list.replaceChildren(tab === "boxes" ? renderBoxes() : renderConcepts());
+  }
+
+  const SW = { circle: "sw-key", highlight: "sw-hl", wave: "sw-wave" };
+  const short = (q) => (q.length > 30 ? `${q.slice(0, 30)}…` : q);
+  function renderOrphans() {
+    if (!state.orphans.length) { orphanBox.replaceChildren(); return; }
+    const t = TEMPLATES[state.tpl];
+    orphanBox.replaceChildren(h("div", { class: "orphans" },
+      h("div", { class: "o-head" }, `제자리를 잃은 표시 ${state.orphans.length}개`,
+        h("span", { class: "o-sub" }, " — 원문이 바뀌어 찾지 못했습니다. 지우지 않고 보관하고 있으니, 본문에서 글자를 골라 다시 붙이거나 지우세요.")),
+      state.attaching ? h("div", { class: "o-attach" }, `본문에서 「${short(state.attaching.quote)}」 를 붙일 글자를 끌어 고르세요. `,
+        h("button", { onclick: () => { state.attaching = null; renderResult(); } }, "취소")) : null,
+      state.orphans.map((o) => h("div", { class: "o-item" + (state.attaching === o ? " on" : "") },
+        h("span", { class: `sw ${SW[o.kind]}`, title: t.marks[o.kind] }, o.kind === "circle" ? "가" : null),
+        h("span", { class: "o-q", title: o.quote }, o.quote),
+        h("button", { onclick: () => { state.attaching = o; renderResult(); } }, "다시 붙이기"),
+        h("button", { class: "icon", title: "이 표시 지우기", onclick: () => {
+          state.orphans = state.orphans.filter((x) => x !== o);
+          if (state.attaching === o) state.attaching = null;
+          renderResult(); save();
+        } }, "✕")))));
+  }
+  function attach(range) {
+    const o = state.attaching;
+    state.attaching = null;
+    state.orphans = state.orphans.filter((x) => x !== o);
+    state.marks.push({ id: uid(), kind: o.kind, quote: tidy(range.toString()), range, mine: true });
+    getSelection()?.removeAllRanges();
+    afterChange();
+    setMsg(applyMsg, "표시를 다시 붙였습니다.");
   }
 
   function renderBoxes() {
@@ -817,12 +922,13 @@
     return hits.sort((a, b) => a.quote.length - b.quote.length)[0] || null;
   }
   function onMouseUp(e) {
-    if (!state.editing || e.composedPath().includes(host)) return;
+    if ((!state.editing && !state.attaching) || e.composedPath().includes(host)) return;
     setTimeout(() => {
       const sel = getSelection();
       if (!sel?.rangeCount || sel.isCollapsed) return;
       const r = sel.getRangeAt(0);
       if (!state.root.contains(r.commonAncestorContainer) || !squash(r.toString())) return;
+      if (state.attaching) { attach(r.cloneRange()); return; }
       showSelectionTools(r.cloneRange());
     }, 0);
   }
@@ -901,8 +1007,9 @@
       if (r.record?.data && !hasData()) {
         const data = r.record.data;
         if (TEMPLATES[data.tpl]) { state.tpl = data.tpl; tplSelect.value = data.tpl; }
-        apply(data, { restored: true });
-        setSaved(`저장해 둔 표시를 불러왔습니다 · ${fmtTime(r.record.savedAt)}${r.from === "folder" ? " · 폴더의 파일에서" : ""}`);
+        const res = apply(data, { restored: true });
+        setSaved(`저장해 둔 표시를 불러왔습니다 · ${fmtTime(r.record.savedAt)}${r.from === "folder" ? " · 폴더의 파일에서" : ""}`
+          + `${res?.moved ? ` · 글이 바뀌어 자리를 다시 잡은 표시 ${res.moved}개` : ""}${res?.orphans ? ` · 제자리를 잃은 표시 ${res.orphans}개` : ""}`);
       } else if (!r.record) setSaved("이 페이지에 저장한 표시가 아직 없습니다. 답을 적용하거나 고치면 자동으로 저장됩니다.");
     } catch (err) {
       setSaved(`불러오지 못했습니다: ${err.message}`, true);
@@ -972,7 +1079,9 @@
     apply: applyText,
     info: () => ({ root: state.root.tagName + (state.root.id ? `#${state.root.id}` : ""), paragraphs: state.paras.length,
       first: state.paras[0]?.text, last: state.paras.at(-1)?.text, side: state.side, width: state.width,
-      marks: state.marks.length, boxes: state.boxes.length, editing: state.editing, popped: !!state.popup, key: KEY, store: conn.ready }),
+      marks: state.marks.length, boxes: state.boxes.length, orphans: state.orphans.length, editing: state.editing, popped: !!state.popup, key: KEY, store: conn.ready }),
+    snapshot: () => serialize(),
+    restore: (data) => { state.marks = []; state.orphans = []; state.boxes = []; state.concepts = null; return apply(data, { restored: true }); },
     destroy,
   };
 })();
