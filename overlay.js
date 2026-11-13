@@ -1,7 +1,8 @@
 // notelayer — 웹페이지 위 표시 층. 북마클릿이 지금 보는 페이지에 templates.js·prompt.js 와 함께 이 파일을 불러온다.
 // 원래 페이지의 글자와 디자인은 고치지 않는다.
-// - 형광펜·물결: 브라우저의 글자 범위 칠하기(CSS Custom Highlight API). 페이지 구조를 건드리지 않는다
-// - 동그라미·설명 배지·패널: 페이지 위에 겹친 별도 층. Shadow DOM 으로 감싸 페이지 CSS 와 섞이지 않게 한다
+// - 핵심어(색 글자+밑줄)·형광펜·물결: 브라우저의 글자 범위 칠하기(CSS Custom Highlight API). 페이지 구조를 건드리지 않는다.
+//   핵심어는 데이터에서는 circle 이지만 여기서는 동그라미를 그리지 않는다. 원문 위에 테두리를 덧그리면 옆 글자·줄과 겹쳐 읽기 어려웠다
+// - 설명 배지·패널: 페이지 위에 겹친 별도 층. Shadow DOM 으로 감싸 페이지 CSS 와 섞이지 않게 한다
 // - 패널은 페이지를 밀지 않는다. 오른쪽 여백을 늘려 밀면 화면에 고정된 사이트 메뉴 밑으로 본문이 깔린다(티스토리에서 확인).
 //   대신 본문 옆 빈자리에 맞춰 놓고, 자리가 모자라면 별도 창으로 떼어 낸다
 (() => {
@@ -296,7 +297,7 @@
     .legend button { font-size: 12px; padding: 3px 8px; border-radius: 999px; }
     .legend button[aria-pressed="false"] { opacity: .4; }
     .sw { display: inline-block; vertical-align: middle; margin-right: 4px; }
-    .sw-circle { width: 18px; height: 11px; border-radius: 999px; border: 2px solid var(--circle); }
+    .sw-key { color: var(--circle); font-weight: 700; text-decoration: underline solid var(--circle); text-decoration-thickness: 2px; text-underline-offset: 2px; }
     .sw-hl { width: 16px; height: 10px; background: var(--hl); }
     .sw-wave { width: 16px; height: 2px; border-bottom: 2px dotted var(--wave); }
     .tabs { display: flex; gap: 4px; border-bottom: 1px solid #eef0f2; margin: 8px 0; }
@@ -352,20 +353,21 @@
     .pop button[aria-pressed="true"] { background: rgba(255,255,255,.28); }
     .pop .sep { width: 1px; background: rgba(255,255,255,.2); margin: 2px 2px; }
   ` + PANEL_CSS));
-  const layerSvg = svgEl("svg", { class: "layer" });
   const badgeLayer = h("div", { class: "layer" });
   const pop = h("div", { class: "pop", hidden: true, onmousedown: (e) => e.preventDefault() });
-  shadow.append(layerSvg, badgeLayer);
+  shadow.append(badgeLayer);
 
   const colors = () => MARK_COLORS[state.tpl] || MARK_COLORS.tech;
   function paint() {
     const c = colors();
-    pageStyle.textContent = `::highlight(nl-ov-hl){background-color:${c.hl}}
+    pageStyle.textContent = `::highlight(nl-ov-key){color:${c.circle};text-decoration:underline solid ${c.circle};text-decoration-thickness:2px;text-underline-offset:3px}
+::highlight(nl-ov-hl){background-color:${c.hl}}
 ::highlight(nl-ov-wave){text-decoration:underline wavy ${c.wave};text-decoration-thickness:1.5px;text-underline-offset:4px}
 ::highlight(nl-ov-flash){background-color:rgba(245,158,11,.4)}`;
     panel.style.setProperty("--circle", c.circle); panel.style.setProperty("--hl", c.hl); panel.style.setProperty("--wave", c.wave);
     if (!window.CSS?.highlights) return;
     const of = (k) => (state.show[k] ? state.marks.filter((m) => m.kind === k).map((m) => m.range) : []);
+    CSS.highlights.set("nl-ov-key", new Highlight(...of("circle")));
     CSS.highlights.set("nl-ov-hl", new Highlight(...of("highlight")));
     CSS.highlights.set("nl-ov-wave", new Highlight(...of("wave")));
   }
@@ -383,24 +385,12 @@
   }
 
   const panelDocked = () => !state.popup;
-  // 동그라미와 배지는 문서 좌표에 그린다. 안쪽 스크롤 영역·글자 크기 변화에 맞춰 다시 그린다
+  // 설명 배지는 문서 좌표에 그린다. 안쪽 스크롤 영역·글자 크기 변화에 맞춰 다시 그린다
   let raf = 0;
   const queueDraw = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(drawLayer); };
   function drawLayer() {
-    layerSvg.replaceChildren();
     for (const b of badgeLayer.querySelectorAll(".badge")) b.remove();
     const sx = window.scrollX, sy = window.scrollY;
-    const hand = TEMPLATES[state.tpl].hand;
-    // 동그라미 = 글자를 감싸는 둥근 테두리. 타원은 옆 글자를 파고들어 겹쳐 보였다
-    if (state.show.circle) for (const m of state.marks) {
-      if (m.kind !== "circle") continue;
-      for (const l of lineRects(m.range)) {
-        const x = l.left + sx - 3, y = l.top + sy - 1, w = l.right - l.left + 6, ht = l.bottom - l.top + 2;
-        const e = svgEl("rect", { x, y, width: w, height: ht, rx: Math.min(ht / 2, 10), fill: "none", stroke: colors().circle, "stroke-width": hand ? "2" : "1.6" });
-        if (hand) e.setAttribute("transform", `rotate(-1 ${x + w / 2} ${y + ht / 2})`);
-        layerSvg.append(e);
-      }
-    }
     if (!state.show.boxes) return;
     const boxColors = TEMPLATES[state.tpl].boxes;
     const groups = new Map();
@@ -613,7 +603,7 @@
     const toggle = (key, ...label) => h("button", { "aria-pressed": String(state.show[key]),
       onclick: () => { state.show[key] = !state.show[key]; paint(); drawLayer(); renderResult(); } }, ...label);
     legend.replaceChildren(
-      toggle("circle", h("span", { class: "sw sw-circle" }), `${t.marks.circle} ${count("circle")}`),
+      toggle("circle", h("span", { class: "sw sw-key" }, "가"), `${t.marks.circle} ${count("circle")}`),
       toggle("highlight", h("span", { class: "sw sw-hl" }), `${t.marks.highlight} ${count("highlight")}`),
       toggle("wave", h("span", { class: "sw sw-wave" }), `${t.marks.wave} ${count("wave")}`),
       toggle("boxes", `설명 배지 ${state.boxes.length}`));
@@ -777,7 +767,7 @@
     pop.style.top = `${y + scrollY}px`;
   }
   const kindName = (k) => TEMPLATES[state.tpl].marks[k];
-  const SHAPE = { circle: "◯", highlight: "▬", wave: "〰" };
+  const SHAPE = { circle: "가", highlight: "▬", wave: "〰" };
 
   function afterChange() { paint(); drawLayer(); renderResult(); save(); }
 
@@ -822,7 +812,6 @@
       if (!state.show[m.kind]) continue;
       let hit = false;
       if (c) try { hit = m.range.isPointInRange(c.node, c.offset) && !(m.range.endContainer === c.node && m.range.endOffset === c.offset); } catch {}
-      if (!hit && m.kind === "circle") hit = lineRects(m.range).some((l) => x >= l.left - 4 && x <= l.right + 4 && y >= l.top - 3 && y <= l.bottom + 3);
       if (hit) hits.push(m);
     }
     return hits.sort((a, b) => a.quote.length - b.quote.length)[0] || null;
@@ -940,7 +929,7 @@
     document.removeEventListener("keydown", onKey, true);
     ro.disconnect(); mapObserver?.disconnect();
     if (state.popup) try { state.popup.close(); } catch {}
-    if (window.CSS?.highlights) for (const k of ["nl-ov-hl", "nl-ov-wave", "nl-ov-flash"]) CSS.highlights.delete(k);
+    if (window.CSS?.highlights) for (const k of ["nl-ov-key", "nl-ov-hl", "nl-ov-wave", "nl-ov-flash"]) CSS.highlights.delete(k);
     host.remove(); pageStyle.remove();
     delete window.NL_OVERLAY;
   }
