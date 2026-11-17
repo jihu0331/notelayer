@@ -412,9 +412,26 @@
       color: #fff; font: 600 11px/20px "Pretendard", "Malgun Gothic", sans-serif; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
     .badge:hover { transform: scale(1.1); }
     .root-box { position: absolute; border: 2px dashed #f59e0b; border-radius: 6px; background: rgba(245, 158, 11, .06); }
-    .pill { position: fixed; right: 16px; bottom: 16px; pointer-events: auto; cursor: pointer; padding: 8px 14px; border-radius: 999px; border: 0;
-      background: #1f2328; color: #fff; font: 600 12px "Pretendard", "Malgun Gothic", sans-serif; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
-    .pill[hidden] { display: none; }
+    /* 접힌 패널 = 오른쪽 위 작은 요약 상자. 누르면 전체 패널이 펼쳐진다 */
+    .mini { position: fixed; top: 12px; right: 12px; pointer-events: auto; cursor: pointer; max-width: min(360px, calc(100vw - 24px));
+      background: #fff; color: #1f2328; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,.15);
+      padding: 7px 10px; font: 12px/1.5 "Pretendard", "IBM Plex Sans KR", "Malgun Gothic", sans-serif; }
+    .mini[hidden] { display: none; }
+    .mini:hover { box-shadow: 0 6px 22px rgba(0,0,0,.22); }
+    .mini:focus-visible { outline: 2px solid #6366f1; }
+    .mini-head { display: flex; align-items: center; gap: 6px; }
+    .mini-head b { font-size: 13px; }
+    .mini .dot { width: 7px; height: 7px; border-radius: 50%; background: #d1d5db; }
+    .mini .dot.on { background: #10b981; }
+    .mini .grow { flex: 1; }
+    .mini .open { color: #6b7280; }
+    .mini-items { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 3px; color: #374151; }
+    .mini-items span { white-space: nowrap; }
+    .mini-items b { font-weight: 700; }
+    .mk { display: inline-block; vertical-align: middle; margin-right: 4px; }
+    .mk-key { color: var(--circle); font-weight: 700; text-decoration: underline solid var(--circle); text-decoration-thickness: 2px; text-underline-offset: 2px; }
+    .mk-hl { width: 12px; height: 9px; background: var(--hl); }
+    .mk-wave { width: 12px; height: 2px; border-bottom: 2px dotted var(--wave); }
     .pop { position: absolute; z-index: 5; pointer-events: auto; display: flex; gap: 2px; padding: 4px; border-radius: 9px; background: #1f2328; color: #fff;
       font: 12px/1.4 "Pretendard", "Malgun Gothic", sans-serif; box-shadow: 0 6px 18px rgba(0,0,0,.3); white-space: nowrap; }
     .pop[hidden] { display: none; }
@@ -551,7 +568,26 @@
   // ── 패널 ──
   const tplSelect = h("select", { onchange: (e) => { state.tpl = e.target.value; paint(); drawLayer(); renderResult(); save(); } },
     Object.entries(TEMPLATES).map(([id, t]) => h("option", { value: id }, t.name)));
-  const pill = h("button", { class: "pill", hidden: true, onclick: () => setMin(false) }, "notelayer");
+  const pill = h("div", { class: "mini", hidden: true, role: "button", tabindex: "0", title: "눌러서 notelayer 패널 펼치기",
+    onclick: () => setMin(false), onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setMin(false); } } });
+  let storeLive = false; // 작은 상자의 저장 점(저장 창과 연결됐는지)
+  function renderMini() {
+    if (pill.hidden) return;
+    const t = TEMPLATES[state.tpl], c = colors();
+    pill.style.setProperty("--circle", c.circle); pill.style.setProperty("--hl", c.hl); pill.style.setProperty("--wave", c.wave);
+    const n = (k) => state.marks.filter((m) => m.kind === k).length;
+    const item = (sw, name, num) => h("span", {}, sw, `${name} `, h("b", {}, String(num)));
+    pill.replaceChildren(
+      h("div", { class: "mini-head" }, h("b", {}, "notelayer"), h("span", { class: storeLive ? "dot on" : "dot", title: storeLive ? "저장 창과 연결됨" : "저장 창이 닫혀 있음" }),
+        h("span", { class: "grow" }), h("span", { class: "open" }, "펼치기 ▾")),
+      h("div", { class: "mini-items" }, hasData()
+        ? [item(h("span", { class: "mk mk-key" }, "가"), t.marks.circle, n("circle")),
+          item(h("span", { class: "mk mk-hl" }), t.marks.highlight, n("highlight")),
+          item(h("span", { class: "mk mk-wave" }), t.marks.wave, n("wave")),
+          item(null, "설명", state.boxes.length),
+          ...(state.orphans.length ? [item(null, "제자리를 잃은 표시", state.orphans.length)] : [])]
+        : [h("span", {}, "눌러서 요청문을 복사하고 AI 답을 붙여 넣으세요")]));
+  }
   const foundMsg = h("p", { class: "muted" });
   const copyMsg = h("p", { class: "msg" });
   const answer = h("textarea", { placeholder: "AI 가 돌려준 답(JSON)을 그대로 붙여 넣으세요" });
@@ -597,6 +633,7 @@
   function setMin(min) {
     if (min) panel.setAttribute("data-min", ""); else panel.removeAttribute("data-min");
     pill.hidden = !min;
+    renderMini();
   }
   const saveUi = () => store.set(UI_KEY, { side: state.side, width: state.width, boxMode: state.boxMode });
 
@@ -723,7 +760,7 @@
   function renderResult() {
     const has = hasData();
     resultBox.hidden = !has;
-    if (!has) return;
+    if (!has) { renderMini(); return; }
     renderOrphans();
     const t = TEMPLATES[state.tpl];
     const count = (k) => state.marks.filter((m) => m.kind === k).length;
@@ -742,6 +779,7 @@
       h("button", { "aria-selected": String(tab === "boxes"), onclick: () => { tab = "boxes"; renderResult(); } }, `설명 ${state.boxes.length}`),
       h("button", { "aria-selected": String(tab === "concepts"), onclick: () => { tab = "concepts"; renderResult(); } }, `요약${nodes.length ? ` (개념 ${nodes.length})` : ""}`));
     list.replaceChildren(tab === "boxes" ? renderBoxes() : renderConcepts());
+    renderMini();
   }
 
   const SW = { circle: "sw-key", highlight: "sw-hl", wave: "sw-wave" };
@@ -1074,6 +1112,8 @@
   }
   function renderStore() {
     const live = conn.win && !conn.win.closed;
+    storeLive = !!(conn.ready && live);
+    renderMini();
     storeOpenBtn.hidden = !BASE || !!(conn.ready && live);
     storeState.className = conn.ready && live ? "msg" : "msg err";
     storeState.textContent = !BASE ? "저장 창 주소를 알 수 없어 저장할 수 없습니다. 즐겨찾기 버튼으로 다시 열어 주세요."
