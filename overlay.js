@@ -19,7 +19,7 @@
     review: { circle: "#15803d", hl: "rgba(134, 239, 172, .45)", wave: "#dc2626" },
   };
   const KINDS = ["circle", "highlight", "wave"];
-  const SKIP = "nav,aside,footer,header,form,[role=navigation],[role=complementary],[aria-hidden=true],notelayer-overlay";
+  const SKIP = "nav,aside,footer,header,form,[role=navigation],[role=complementary],[aria-hidden=true],notelayer-overlay,notelayer-note";
   const BLOCK = "p,div,li,ul,ol,dl,dt,dd,table,tr,td,th,pre,blockquote,h1,h2,h3,h4,h5,h6,section,article,figure,figcaption,main";
   const LEAF = "p,div,li,dt,dd,td,th,pre,blockquote,h1,h2,h3,h4,h5,h6,figcaption";
   // 표시·메모는 notelayer 주소의 저장 창(store.html)이 이 PC 에 저장한다.
@@ -102,7 +102,7 @@
     if (idx) return idx;
     const chars = [], map = [];
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
-      acceptNode: (n) => (n.parentElement?.closest("script,style,noscript,notelayer-overlay") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+      acceptNode: (n) => (n.parentElement?.closest("script,style,noscript,notelayer-overlay,notelayer-note") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
     });
     for (let n; (n = walker.nextNode()); ) {
       const t = n.data;
@@ -181,6 +181,8 @@
     show: { circle: true, highlight: true, wave: true, boxes: true },
     editing: false,
     side: ui.side || null, width: ui.width || null,
+    // 설명 카드 위치: inline = 해당 문단 바로 아래 본문 속(기본), side = 옆 패널 + 문단 옆 배지
+    boxMode: ui.boxMode === "side" ? "side" : "inline",
     popup: null,
   };
   const paraIndexOf = (node) => {
@@ -459,7 +461,8 @@
   function drawLayer() {
     for (const b of badgeLayer.querySelectorAll(".badge")) b.remove();
     const sx = window.scrollX, sy = window.scrollY;
-    if (!state.show.boxes) return;
+    renderInline();
+    if (!state.show.boxes || state.boxMode === "inline") return;
     const boxColors = TEMPLATES[state.tpl].boxes;
     const groups = new Map();
     for (const b of sortedBoxes()) { if (!groups.has(b.el)) groups.set(b.el, []); groups.get(b.el).push(b); }
@@ -475,6 +478,54 @@
         onclick: () => openCard(list[0].id),
       }, list.length > 1 ? String(list.length) : "i"));
     }
+  }
+
+  // ── 본문 속 설명 카드: 해당 문단 바로 아래에 끼운다. 원문 글자는 건드리지 않고, 카드는 Shadow DOM 으로 감싸 페이지 CSS 와 섞이지 않게 한다 ──
+  const INLINE_CSS = `
+    :host { all: initial; display: block; margin: 8px 0 14px; }
+    .card { border: 1px solid #e5e7eb; border-left: 3px solid var(--c); border-radius: 8px; background: #f8fafc; color: #1f2328;
+      padding: 8px 12px; margin: 6px 0; font: 14px/1.65 "Pretendard", "IBM Plex Sans KR", "Malgun Gothic", sans-serif; text-align: left; }
+    .head { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+    .chip { font-size: 12px; font-weight: 700; color: var(--c); }
+    .grow { flex: 1; }
+    .edit { border: 0; background: none; color: #9ca3af; cursor: pointer; font-size: 12px; padding: 0 4px; visibility: hidden; }
+    .card:hover .edit { visibility: visible; }
+    pre { margin: 6px 0 0; padding: 6px 8px; background: #eef2f6; border-radius: 6px; font: 12.5px/1.5 Consolas, "D2Coding", monospace; white-space: pre; overflow-x: auto; }
+    details { margin-top: 6px; }
+    summary { cursor: pointer; color: #9c36b5; font-size: 13px; }
+  `;
+  const inlineHosts = [];
+  let inlineSig = "";
+  function renderInline() {
+    const on = state.boxMode === "inline" && state.show.boxes;
+    const list = on ? sortedBoxes() : [];
+    const sig = JSON.stringify([state.tpl, list.map((b) => [boxOrder(b), b.id, b.label, b.text, b.pre, b.answer])]);
+    if (sig === inlineSig) return; // 내용이 그대로면 손대지 않는다(끼우면 페이지 높이가 바뀌어 다시 그리기가 돌아오므로)
+    inlineSig = sig;
+    for (const x of inlineHosts.splice(0)) x.remove();
+    const colors = TEMPLATES[state.tpl].boxes;
+    const groups = new Map();
+    for (const b of list) { if (!groups.has(b.el)) groups.set(b.el, []); groups.get(b.el).push(b); }
+    for (const [el, items] of groups) {
+      if (!el.isConnected) continue;
+      const box = document.createElement("notelayer-note");
+      const sr = box.attachShadow({ mode: "open" });
+      sr.append(h("style", {}, INLINE_CSS), ...items.map((b) => h("div", { class: "card", style: `--c:${colors[b.label] || "#6b7280"}` },
+        h("div", { class: "head" }, h("span", { class: "chip" }, b.label), h("span", { class: "grow" }),
+          h("button", { class: "edit", title: "패널에서 고치기", onclick: () => { if (!state.editing) setEditing(true); openCard(b.id); } }, "✎ 고치기")),
+        h("div", {}, b.text),
+        b.pre ? h("pre", {}, b.pre) : null,
+        b.answer ? h("details", {}, h("summary", {}, "답 보기"), h("div", {}, b.answer)) : null)));
+      // 목록 칸·표 칸 안의 문단이면 그 칸 안에, 아니면 문단 바로 뒤에 끼운다(표·목록 모양을 깨지 않게)
+      if (/^(LI|TD|TH|DT|DD)$/.test(el.tagName)) el.append(box); else el.after(box);
+      inlineHosts.push(box);
+    }
+  }
+  // 본문 속 카드 모드에서 패널이 본문을 가리면(반화면 등) 작은 버튼으로 접는다
+  function tuckIfCovering() {
+    if (state.boxMode !== "inline" || !panelDocked() || panel.hasAttribute("data-min")) return;
+    const p = panel.getBoundingClientRect(), r = state.root.getBoundingClientRect();
+    if (p.left < r.right - 40 && p.right > r.left + 40) setMin(true);
   }
 
   function flashElement(el) {
@@ -547,7 +598,7 @@
     if (min) panel.setAttribute("data-min", ""); else panel.removeAttribute("data-min");
     pill.hidden = !min;
   }
-  const saveUi = () => store.set(UI_KEY, { side: state.side, width: state.width });
+  const saveUi = () => store.set(UI_KEY, { side: state.side, width: state.width, boxMode: state.boxMode });
 
   // 본문 양옆 빈자리 중 넓은 쪽에, 그 폭에 맞춰 둔다. 자리가 모자라면 기본 폭으로 겹쳐 두고 별도 창을 권한다
   function autoPlace() {
@@ -654,6 +705,7 @@
     if (c || restored) state.concepts = c;
     paint(); drawLayer(); renderResult();
     if (!restored || a.moved) save(); // 자리를 다시 잡은 표시는 새 구절·앞뒤 글자로 저장해 둔다
+    tuckIfCovering();
     const placed = a.marks.length;
     const parts = [`${restored ? "저장한 " : ""}표시 ${placed}/${a.total}개, 설명 ${a.boxes.length}개를 얹었습니다`];
     if (state.concepts) parts.push(`개념 ${state.concepts.nodes.length}개`);
@@ -681,7 +733,10 @@
       toggle("circle", h("span", { class: "sw sw-key" }, "가"), `${t.marks.circle} ${count("circle")}`),
       toggle("highlight", h("span", { class: "sw sw-hl" }), `${t.marks.highlight} ${count("highlight")}`),
       toggle("wave", h("span", { class: "sw sw-wave" }), `${t.marks.wave} ${count("wave")}`),
-      toggle("boxes", `설명 배지 ${state.boxes.length}`));
+      toggle("boxes", `설명 ${state.boxes.length}`),
+      h("button", { title: "설명 카드를 문단 아래(본문 속)에 둘지, 옆 패널과 배지로 볼지", onclick: () => {
+        state.boxMode = state.boxMode === "inline" ? "side" : "inline"; saveUi(); drawLayer(); renderResult(); tuckIfCovering();
+      } }, state.boxMode === "inline" ? "설명 위치: 본문 속 ⇄" : "설명 위치: 옆 패널 ⇄"));
     const nodes = state.concepts?.nodes || [];
     tabs.replaceChildren(
       h("button", { "aria-selected": String(tab === "boxes"), onclick: () => { tab = "boxes"; renderResult(); } }, `설명 ${state.boxes.length}`),
@@ -725,7 +780,7 @@
     const edit = state.editing;
     // 고칠 때는 화면을 다시 그리지 않고 값만 바꾼다(그리면 입력 중인 칸의 커서가 날아간다)
     const editable = (b, key, cls, ph, tag = "div") => h(tag, { class: cls, contenteditable: "plaintext-only", "data-ph": ph,
-      oninput: (e) => { b[key] = key === "pre" ? e.target.innerText.replace(/\n$/, "") : tidy(e.target.innerText); b.mine = true; save(); } }, b[key] || "");
+      oninput: (e) => { b[key] = key === "pre" ? e.target.innerText.replace(/\n$/, "") : tidy(e.target.innerText); b.mine = true; save(); queueDraw(); } }, b[key] || "");
     for (const b of sortedBoxes()) {
       const c = boxColors[b.label] || "#6b7280";
       const head = edit
@@ -1039,6 +1094,7 @@
     ro.disconnect(); mapObserver?.disconnect();
     if (state.popup) try { state.popup.close(); } catch {}
     if (window.CSS?.highlights) for (const k of ["nl-ov-key", "nl-ov-hl", "nl-ov-wave", "nl-ov-flash"]) CSS.highlights.delete(k);
+    for (const x of inlineHosts.splice(0)) x.remove();
     host.remove(); pageStyle.remove();
     delete window.NL_OVERLAY;
   }
