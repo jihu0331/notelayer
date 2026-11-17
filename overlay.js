@@ -179,6 +179,7 @@
     boxes: [],            // { id, label, text, pre, answer, el, mine }
     concepts: null,
     show: { circle: true, highlight: true, wave: true, boxes: true },
+    focus: null, // 「이것만 또렷하게」: circle | highlight | wave | boxes — 본문의 나머지 글자를 흐리게 하고 이 종류만 남긴다
     editing: false,
     side: ui.side || null, width: ui.width || null,
     // 설명 카드 위치: inline = 해당 문단 바로 아래 본문 속(기본), side = 옆 패널 + 문단 옆 배지
@@ -427,6 +428,12 @@
     .mini .open { color: #6b7280; }
     .mini-items { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 3px; color: #374151; }
     .mini-items span { white-space: nowrap; }
+    .mini .it { display: inline-flex; align-items: center; border-radius: 6px; }
+    .mini .it button { border: 0; background: none; font: inherit; color: inherit; cursor: pointer; padding: 1px 3px; border-radius: 5px; }
+    .mini .it button:hover { background: #f3f4f6; }
+    .mini .it .eye { color: #6b7280; display: inline-flex; }
+    .mini .it.off { opacity: .45; }
+    .mini .it.on .lab { background: #fef3c7; box-shadow: inset 0 0 0 1px #f59e0b; }
     .mini-items b { font-weight: 700; }
     .mk { display: inline-block; vertical-align: middle; margin-right: 4px; }
     .mk-key { color: var(--circle); font-weight: 700; text-decoration: underline solid var(--circle); text-decoration-thickness: 2px; text-underline-offset: 2px; }
@@ -446,18 +453,29 @@
 
   const colors = () => MARK_COLORS[state.tpl] || MARK_COLORS.tech;
   function paint() {
-    const c = colors();
-    pageStyle.textContent = `::highlight(nl-ov-key){color:${c.circle};text-decoration:underline solid ${c.circle};text-decoration-thickness:2px;text-underline-offset:3px}
-::highlight(nl-ov-hl){background-color:${c.hl}}
-::highlight(nl-ov-wave){text-decoration:underline wavy ${c.wave};text-decoration-thickness:1.5px;text-underline-offset:4px}
+    const c = colors(), f = state.focus;
+    // 또렷하게 할 때: 본문 글자 전체를 흐리게(nl-ov-dim) 칠하고, 고른 종류만 그 위에 진한 글자색으로 다시 칠한다(우선순위가 높은 칠이 이긴다)
+    const ink = "#111827";
+    pageStyle.textContent = `::highlight(nl-ov-dim){color:rgba(120,124,132,.42)}
+::highlight(nl-ov-key){color:${c.circle};text-decoration:underline solid ${c.circle};text-decoration-thickness:2px;text-underline-offset:3px}
+::highlight(nl-ov-hl){background-color:${c.hl}${f === "highlight" ? `;color:${ink}` : ""}}
+::highlight(nl-ov-wave){text-decoration:underline wavy ${c.wave};text-decoration-thickness:1.5px;text-underline-offset:4px${f === "wave" ? `;color:${ink}` : ""}}
 ::highlight(nl-ov-flash){background-color:rgba(245,158,11,.4)}`;
     panel.style.setProperty("--circle", c.circle); panel.style.setProperty("--hl", c.hl); panel.style.setProperty("--wave", c.wave);
     if (!window.CSS?.highlights) return;
-    const of = (k) => (state.show[k] ? state.marks.filter((m) => m.kind === k).map((m) => m.range) : []);
-    CSS.highlights.set("nl-ov-key", new Highlight(...of("circle")));
-    CSS.highlights.set("nl-ov-hl", new Highlight(...of("highlight")));
-    CSS.highlights.set("nl-ov-wave", new Highlight(...of("wave")));
+    const visible = (k) => state.show[k] && (!f || f === k);
+    const of = (k) => (visible(k) ? state.marks.filter((m) => m.kind === k).map((m) => m.range) : []);
+    const set = (name, ranges, priority) => { const x = new Highlight(...ranges); x.priority = priority; CSS.highlights.set(name, x); };
+    const all = f && state.root ? (() => { const r = document.createRange(); r.selectNodeContents(state.root); return [r]; })() : [];
+    set("nl-ov-dim", all, 0);
+    set("nl-ov-key", of("circle"), 2);
+    set("nl-ov-hl", of("highlight"), 1);
+    set("nl-ov-wave", of("wave"), 1);
   }
+  // 작은 상자·패널에서 보이기/숨기기, 또렷하게를 바꾼 다음 다시 그린다
+  function setShow(k, on) { state.show[k] = on; if (!on && state.focus === k) state.focus = null; refreshMarks(); }
+  function setFocus(k) { state.focus = state.focus === k ? null : k; if (state.focus) state.show[k] = true; refreshMarks(); }
+  function refreshMarks() { paint(); drawLayer(); renderResult(); }
 
   // 한 표시가 굵은 글씨·링크처럼 여러 조각에 걸치면 조각마다 네모가 나온다. 같은 줄의 조각은 하나로 합친다
   function lineRects(range) {
@@ -514,7 +532,7 @@
   const inlineHosts = [];
   let inlineSig = "";
   function renderInline() {
-    const on = state.boxMode === "inline" && state.show.boxes;
+    const on = state.boxMode === "inline" && state.show.boxes && (!state.focus || state.focus === "boxes"); // 표시 한 종류만 또렷하게 할 때는 카드도 잠시 감춘다
     const list = on ? sortedBoxes() : [];
     const sig = JSON.stringify([state.tpl, list.map((b) => [boxOrder(b), b.id, b.label, b.text, b.pre, b.answer])]);
     if (sig === inlineSig) return; // 내용이 그대로면 손대지 않는다(끼우면 페이지 높이가 바뀌어 다시 그리기가 돌아오므로)
@@ -576,16 +594,25 @@
     const t = TEMPLATES[state.tpl], c = colors();
     pill.style.setProperty("--circle", c.circle); pill.style.setProperty("--hl", c.hl); pill.style.setProperty("--wave", c.wave);
     const n = (k) => state.marks.filter((m) => m.kind === k).length;
-    const item = (sw, name, num) => h("span", {}, sw, `${name} `, h("b", {}, String(num)));
+    const eye = (on) => { const v = svgEl("svg", { viewBox: "0 0 16 16", width: "14", height: "14" });
+      v.append(svgEl("path", { d: "M1 8s2.6-5 7-5 7 5 7 5-2.6 5-7 5-7-5-7-5z", fill: "none", stroke: "currentColor", "stroke-width": "1.4" }),
+        svgEl("circle", { cx: "8", cy: "8", r: "2", fill: "currentColor" }));
+      if (!on) v.append(svgEl("path", { d: "M2 14L14 2", stroke: "currentColor", "stroke-width": "1.6" }));
+      return v; };
+    const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
+    const item = (k, sw, name, num) => h("span", { class: `it${state.focus === k ? " on" : ""}${state.show[k] ? "" : " off"}` },
+      h("button", { class: "eye", title: state.show[k] ? "본문에서 숨기기" : "본문에 보이기", onclick: stop(() => setShow(k, !state.show[k])) }, eye(state.show[k])),
+      h("button", { class: "lab", title: state.focus === k ? "다시 누르면 풀기(Esc)" : "이것만 또렷하게(나머지 글자는 흐리게)", onclick: stop(() => setFocus(k)) },
+        sw, `${name} `, h("b", {}, String(num))));
     pill.replaceChildren(
       h("div", { class: "mini-head" }, h("b", {}, "notelayer"), h("span", { class: storeLive ? "dot on" : "dot", title: storeLive ? "저장 창과 연결됨" : "저장 창이 닫혀 있음" }),
         h("span", { class: "grow" }), h("span", { class: "open" }, "펼치기 ▾")),
       h("div", { class: "mini-items" }, hasData()
-        ? [item(h("span", { class: "mk mk-key" }, "가"), t.marks.circle, n("circle")),
-          item(h("span", { class: "mk mk-hl" }), t.marks.highlight, n("highlight")),
-          item(h("span", { class: "mk mk-wave" }), t.marks.wave, n("wave")),
-          item(null, "설명", state.boxes.length),
-          ...(state.orphans.length ? [item(null, "제자리를 잃은 표시", state.orphans.length)] : [])]
+        ? [item("circle", h("span", { class: "mk mk-key" }, "가"), t.marks.circle, n("circle")),
+          item("highlight", h("span", { class: "mk mk-hl" }), t.marks.highlight, n("highlight")),
+          item("wave", h("span", { class: "mk mk-wave" }), t.marks.wave, n("wave")),
+          item("boxes", null, "설명", state.boxes.length),
+          ...(state.orphans.length ? [h("span", {}, `제자리를 잃은 표시 `, h("b", {}, String(state.orphans.length)))] : [])]
         : [h("span", {}, "눌러서 요청문을 복사하고 AI 답을 붙여 넣으세요")]));
   }
   const foundMsg = h("p", { class: "muted" });
@@ -765,7 +792,7 @@
     const t = TEMPLATES[state.tpl];
     const count = (k) => state.marks.filter((m) => m.kind === k).length;
     const toggle = (key, ...label) => h("button", { "aria-pressed": String(state.show[key]),
-      onclick: () => { state.show[key] = !state.show[key]; paint(); drawLayer(); renderResult(); } }, ...label);
+      onclick: () => setShow(key, !state.show[key]) }, ...label);
     legend.replaceChildren(
       toggle("circle", h("span", { class: "sw sw-key" }, "가"), `${t.marks.circle} ${count("circle")}`),
       toggle("highlight", h("span", { class: "sw sw-hl" }), `${t.marks.highlight} ${count("highlight")}`),
@@ -1034,7 +1061,7 @@
     e.preventDefault(); e.stopPropagation(); // 표시가 링크 위에 있어도 페이지를 옮기지 않는다
     showMarkTools(m, e.clientX, e.clientY);
   }
-  function onKey(e) { if (e.key === "Escape") hidePop(); }
+  function onKey(e) { if (e.key === "Escape") { hidePop(); if (state.focus) setFocus(state.focus); } }
   function onScroll() { queueDraw(); if (!pop.hidden && pop.dataset.keep !== "1") hidePop(); }
 
   // ── 저장 창과 주고받기 ──
@@ -1133,7 +1160,7 @@
     document.removeEventListener("keydown", onKey, true);
     ro.disconnect(); mapObserver?.disconnect();
     if (state.popup) try { state.popup.close(); } catch {}
-    if (window.CSS?.highlights) for (const k of ["nl-ov-key", "nl-ov-hl", "nl-ov-wave", "nl-ov-flash"]) CSS.highlights.delete(k);
+    if (window.CSS?.highlights) for (const k of ["nl-ov-dim", "nl-ov-key", "nl-ov-hl", "nl-ov-wave", "nl-ov-flash"]) CSS.highlights.delete(k);
     for (const x of inlineHosts.splice(0)) x.remove();
     host.remove(); pageStyle.remove();
     delete window.NL_OVERLAY;
