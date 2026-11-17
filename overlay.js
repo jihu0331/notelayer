@@ -396,7 +396,9 @@
     .map-lines .rel { fill: none; stroke: #6366f1; stroke-width: 1.4; stroke-dasharray: 4 3; }
     .map-lines .rel.on { stroke-width: 2.4; stroke-dasharray: none; }
     .map-lines .arrow { fill: #6366f1; }
-    .mnode { position: relative; z-index: 1; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 5px 8px; margin: 10px 0; }
+    .mnode { position: relative; z-index: 1; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 5px 8px; margin: 13px 0; }
+    .tree-label { position: absolute; z-index: 2; transform: translate(-50%, -50%); font-size: 10px; line-height: 13px; padding: 0 5px; white-space: nowrap;
+      color: #475569; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 999px; pointer-events: none; }
     .mnode.topic { display: inline-block; background: #1f2328; color: #fff; border-color: #1f2328; font-weight: 600; font-size: 12px; margin-top: 2px; }
     .mnode.on { border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99, 102, 241, .2); }
     .mnode .term { cursor: pointer; font-weight: 600; }
@@ -912,7 +914,10 @@
     return wrap;
   }
 
-  function drawMap({ wrap, lines, labels, topic, rows, links, gutter }) {
+  // 위아래 관계의 이름. AI 답의 rel(상위 개념과의 관계)을 쓰고, 없으면 역할(role)이 관계를 뜻하는 말일 때만 쓴다
+  const ROLE_AS_REL = { "분류": "종류", "종류": "종류", "구성 요소": "구성 요소", "하위 개념": "하위 개념", "예시": "예", "예": "예", "단계": "단계", "하위 단계": "단계" };
+  const relName = (n) => (tidy(n?.rel) || ROLE_AS_REL[tidy(n?.role)] || "").slice(0, 8);
+  function drawMap({ wrap, lines, labels, topic, rows, links, gutter, byId }) {
     if (!wrap.isConnected) return;
     lines.replaceChildren(); labels.replaceChildren();
     const base = wrap.getBoundingClientRect();
@@ -930,6 +935,18 @@
       if (!pb || !cb) continue;
       const vx = pb.l + 10;
       path(`M${vx} ${pb.b} V${cb.m - 6} Q${vx} ${cb.m} ${vx + 6} ${cb.m} H${cb.l}`, "tree");
+    }
+    // 갈라지는 자리의 관계 이름표: 형제들의 관계가 모두 같으면 갈라지기 시작하는 곳에 하나, 다르면 가지마다
+    const kidsOf = new Map();
+    for (const x of rows) { if (!kidsOf.has(x.parent)) kidsOf.set(x.parent, []); kidsOf.get(x.parent).push(x); }
+    const tag = (text, x, y) => labels.append(h("div", { class: "tree-label", style: `left:${x}px;top:${y}px` }, text));
+    for (const [parent, kids] of kidsOf) {
+      if (parent == null) continue; // 맨 위 개념들은 주제 아래에 그냥 놓인다
+      const pb = pos.get(parent);
+      if (!pb) continue;
+      const vx = pb.l + 10, rels = kids.map((k) => relName(byId.get(k.id)));
+      if (rels.every((r) => r === rels[0])) { if (rels[0]) tag(rels[0], vx, (pb.b + pos.get(kids[0].id).t) / 2); }
+      else kids.forEach((k, i) => { if (rels[i]) tag(rels[i], vx, pos.get(k.id).m - 12); });
     }
     if (!links.length) return;
     // 위아래가 아닌 관계: 카드 오른쪽 여백에서 활처럼 잇는다. 겹치는 구간은 다른 줄(lane)로 비켜 간다
