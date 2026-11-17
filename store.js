@@ -168,7 +168,7 @@
     if (!canFolder) {
       $("folderBody").textContent = "이 브라우저는 폴더에 직접 쓰는 기능이 없습니다(크롬·엣지에서 됩니다). 대신 「이 페이지 파일로 내려받기」와 「파일 불러오기」를 쓰세요.";
     } else if (folderState === "none") {
-      $("folderBody").textContent = "폴더를 한 번 고르면 저장할 때마다 페이지마다 파일 하나씩 그 폴더에도 씁니다. 브라우저 기록을 지워도 남고, OneDrive·구글 드라이브 같은 동기화 폴더에 두면 다른 PC 에서도 같은 표시가 열립니다.";
+      $("folderBody").textContent = "폴더를 한 번 고르면 저장할 때마다 페이지마다 파일 하나씩 그 폴더에도 씁니다. 브라우저 기록을 지워도 남고, OneDrive·구글 드라이브 같은 동기화 폴더에 두면 다른 PC 에서도 같은 표시가 열립니다. 바탕 화면·다운로드 같은 폴더 자체는 크롬이 막으니, 안에 새 폴더(예: 문서\\notelayer)를 만들어 고르세요.";
       btns.push(el("button", { class: "primary", onclick: pickFolder }, "폴더 고르기"));
     } else {
       const label = dirName ? `「${dirName}」` : "고른";
@@ -214,7 +214,8 @@
       status(folderState === "granted" ? `「${dir.name}」 폴더를 연결했습니다. 이제 저장할 때마다 이 폴더에도 파일로 씁니다.` : `「${dir.name}」 폴더에 쓰기 허락을 받지 못했습니다. 「폴더 다시 허용」을 눌러 주세요.`, folderState !== "granted");
     } catch (err) {
       status(err?.name === "AbortError"
-        ? "폴더 고르기가 취소됐습니다. 폴더 창이 뜨지 않았다면 이 창을 한 번 누른 다음 다시 눌러 보세요."
+        // 크롬은 바탕 화면·다운로드·사용자 폴더 자체·드라이브 맨 위처럼 시스템과 겹치는 폴더를 막고, 그런 폴더를 고르면 취소로 돌려준다
+        ? "폴더 고르기가 취소됐습니다. 바탕 화면·다운로드·사용자 폴더 자체·C:\\ 처럼 크롬이 막는 폴더를 골랐다면, 그 안에 새 폴더(예: 문서\\notelayer)를 만들어 그 폴더를 고르세요. 폴더 창이 안 보였다면 다른 창 뒤에 떴을 수 있습니다."
         : `폴더를 연결하지 못했습니다: ${err?.name || ""} ${err?.message || err}`, true);
     }
     render();
