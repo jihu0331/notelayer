@@ -397,6 +397,9 @@
     .map-lines .rel.on { stroke-width: 2.4; stroke-dasharray: none; }
     .map-lines .arrow { fill: #6366f1; }
     .mnode { position: relative; z-index: 1; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 5px 8px; margin: 13px 0; }
+    .mnode.root { margin-top: 20px; }
+    .mnode.lone { border-style: dashed; }
+    .map-sub { margin: 24px 0 4px; font-size: 11px; color: #6b7280; border-top: 1px dashed #e5e7eb; padding-top: 8px; }
     .tree-label { position: absolute; z-index: 2; transform: translate(-50%, -50%); font-size: 10px; line-height: 13px; padding: 0 5px; white-space: nowrap;
       color: #475569; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 999px; pointer-events: none; }
     .mnode.topic { display: inline-block; background: #1f2328; color: #fff; border-color: #1f2328; font-weight: 600; font-size: 12px; margin-top: 2px; }
@@ -879,7 +882,9 @@
     const byId = new Map(c.nodes.map((n) => [n.id, n]));
     const kids = new Map();
     for (const n of c.nodes) { if (!kids.has(n.parent)) kids.set(n.parent, []); kids.get(n.parent).push(n); }
-    const INDENT = 20;
+    // 관계 이름표가 있으면 하위 개념으로 들어가는 가로선을 길게 해 그 가운데에 이름표를 얹는다
+    const hasRel = c.nodes.some((n) => n.parent && relName(n));
+    const INDENT = hasRel ? 52 : 22;
     const width = list.clientWidth || 300;
     const gutter = c.links.length ? clamp(Math.round(width * 0.3), 76, 150) : 0;
     const wrap = h("div", { class: "map", style: `padding-right:${gutter}px` });
@@ -888,23 +893,35 @@
     const topic = h("div", { class: "mnode topic" }, c.topic);
     wrap.append(lines, topic);
     const rows = [], seen = new Set();
+    // 다른 개념과 위아래로도 화살표로도 이어지지 않은 개념은 「따로 있는 개념」으로 떼어 놓는다
+    const linked = new Set(c.links.flatMap((l) => [l.from, l.to]));
+    const alone = (n) => n.parent == null && !(kids.get(n.id) || []).length && !linked.has(n.id);
+    const card = (n, depth, extra = "") => {
+      const pts = (Array.isArray(n.points) ? n.points : []).filter((x) => typeof x === "string" && x.trim());
+      const ptsList = h("ul", { class: "points", hidden: true }, pts.map((x) => h("li", {}, x)));
+      return h("div", { class: `mnode${extra}`, "data-id": n.id, style: `margin-left:${depth * INDENT}px` },
+        h("div", { class: "term", title: pts.length ? "눌러서 핵심 내용 펼치기" : "", onclick: () => (ptsList.hidden = !ptsList.hidden) },
+          n.term, n.role ? h("span", { class: "role" }, n.role) : null),
+        n.gloss ? h("div", { class: "gloss" }, n.gloss) : null,
+        ptsList);
+    };
     const walk = (parent, depth) => {
       for (const n of kids.get(parent) || []) {
-        if (seen.has(n.id)) continue;
+        if (seen.has(n.id) || (parent == null && alone(n))) continue;
         seen.add(n.id);
-        const pts = (Array.isArray(n.points) ? n.points : []).filter((x) => typeof x === "string" && x.trim());
-        const ptsList = h("ul", { class: "points", hidden: true }, pts.map((x) => h("li", {}, x)));
-        const card = h("div", { class: "mnode", "data-id": n.id, style: `margin-left:${depth * INDENT}px` },
-          h("div", { class: "term", title: pts.length ? "눌러서 핵심 내용 펼치기" : "", onclick: () => (ptsList.hidden = !ptsList.hidden) },
-            n.term, n.role ? h("span", { class: "role" }, n.role) : null),
-          n.gloss ? h("div", { class: "gloss" }, n.gloss) : null,
-          ptsList);
-        rows.push({ id: n.id, parent, el: card });
-        wrap.append(card);
+        // 맨 위 개념은 주제와 선으로 잇지 않고 묶음마다 떨어뜨려 놓는다(주제와의 선은 관계를 뜻하지 않아서)
+        const el = card(n, depth, parent == null ? " root" : "");
+        rows.push({ id: n.id, parent, el });
+        wrap.append(el);
         walk(n.id, depth + 1);
       }
     };
-    walk(null, 1);
+    walk(null, 0);
+    const lonely = (kids.get(null) || []).filter(alone);
+    if (lonely.length) {
+      wrap.append(h("div", { class: "map-sub" }, "따로 있는 개념 — 다른 개념과 이어진 관계가 없습니다"));
+      for (const n of lonely) { const el = card(n, 0, " lone"); rows.push({ id: n.id, parent: null, el }); wrap.append(el); }
+    }
     wrap.append(labels);
     const draw = () => drawMap({ wrap, lines, labels, topic, rows, links: c.links, gutter, byId });
     const win = list.ownerDocument.defaultView;
@@ -923,7 +940,6 @@
     const base = wrap.getBoundingClientRect();
     const box = (el) => { const r = el.getBoundingClientRect(); return { l: r.left - base.left, r: r.right - base.left, t: r.top - base.top, b: r.bottom - base.top, m: (r.top + r.bottom) / 2 - base.top }; };
     const pos = new Map(rows.map((x) => [x.id, box(x.el)]));
-    const topicBox = box(topic);
     const path = (d, cls) => { const p = svgEl("path", { d, class: cls }); lines.append(p); return p; };
     const defs = svgEl("defs");
     const marker = svgEl("marker", { id: "nl-arrow", viewBox: "0 0 8 8", refX: "7", refY: "4", markerWidth: "7", markerHeight: "7", orient: "auto-start-reverse" });
@@ -931,22 +947,23 @@
     defs.append(marker); lines.append(defs);
     // 위아래 관계: 상위 개념 왼쪽 아래에서 내려와 하위 개념 왼쪽으로 꺾어 들어간다
     for (const x of rows) {
-      const pb = x.parent == null ? topicBox : pos.get(x.parent), cb = pos.get(x.id);
+      if (x.parent == null) continue;
+      const pb = pos.get(x.parent), cb = pos.get(x.id);
       if (!pb || !cb) continue;
       const vx = pb.l + 10;
       path(`M${vx} ${pb.b} V${cb.m - 6} Q${vx} ${cb.m} ${vx + 6} ${cb.m} H${cb.l}`, "tree");
     }
-    // 갈라지는 자리의 관계 이름표: 형제들의 관계가 모두 같으면 갈라지기 시작하는 곳에 하나, 다르면 가지마다
-    const kidsOf = new Map();
-    for (const x of rows) { if (!kidsOf.has(x.parent)) kidsOf.set(x.parent, []); kidsOf.get(x.parent).push(x); }
-    const tag = (text, x, y) => labels.append(h("div", { class: "tree-label", style: `left:${x}px;top:${y}px` }, text));
-    for (const [parent, kids] of kidsOf) {
-      if (parent == null) continue; // 맨 위 개념들은 주제 아래에 그냥 놓인다
-      const pb = pos.get(parent);
-      if (!pb) continue;
-      const vx = pb.l + 10, rels = kids.map((k) => relName(byId.get(k.id)));
-      if (rels.every((r) => r === rels[0])) { if (rels[0]) tag(rels[0], vx, (pb.b + pos.get(kids[0].id).t) / 2); }
-      else kids.forEach((k, i) => { if (rels[i]) tag(rels[i], vx, pos.get(k.id).m - 12); });
+    // 관계 이름표: 상위 개념의 세로선에서 하위 개념 카드로 들어가는 가로선 가운데
+    for (const x of rows) {
+      if (x.parent == null) continue;
+      const pb = pos.get(x.parent), cb = pos.get(x.id), rel = relName(byId.get(x.id));
+      if (!pb || !cb || !rel) continue;
+      const vx = pb.l + 10;
+      // 가로선에 들어가면 가운데, 넘치면 카드 바로 앞에 맞춰 세로선 쪽으로 늘린다(카드를 덮지 않게)
+      const lab = h("div", { class: "tree-label", style: `top:${cb.m}px` }, rel);
+      labels.append(lab);
+      const w = lab.offsetWidth, l = vx + 6, r = cb.l - 3;
+      lab.style.left = `${w <= r - l ? (l + r) / 2 : r - w / 2}px`;
     }
     if (!links.length) return;
     // 위아래가 아닌 관계: 카드 오른쪽 여백에서 활처럼 잇는다. 겹치는 구간은 다른 줄(lane)로 비켜 간다
