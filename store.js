@@ -30,6 +30,12 @@
 
   // ── 내 PC 폴더 ──
   const canFolder = "showDirectoryPicker" in window;
+  // 블로그 같은 다른 사이트가 띄운 작은 저장 창(팝업) 안에서는 크롬이 폴더 고르는 창을 열지 않고 곧바로 「취소」를 돌려준다
+  // (실제 크롬 157 에서 확인: 팝업 0.04초 만에 취소, 일반 탭은 정상). 그래서 폴더 고르기·다시 허용은 저장 창을 일반 탭으로 열어 거기서 하고,
+  // 고른 결과는 같은 출처끼리 쓰는 알림 통로(BroadcastChannel)로 작은 저장 창에 알린다
+  const FOLDER_TAB = new URLSearchParams(location.search).has("folder");
+  const IN_POPUP = !!window.opener && !FOLDER_TAB;
+  const bc = "BroadcastChannel" in window ? new BroadcastChannel("notelayer-store") : null;
   let folderState = "none"; // none | granted | prompt
   async function folder(ask = false) {
     const dir = await getMeta("dir").catch(() => null);
@@ -168,18 +174,26 @@
     if (!canFolder) {
       $("folderBody").textContent = "이 브라우저는 폴더에 직접 쓰는 기능이 없습니다(크롬·엣지에서 됩니다). 대신 「이 페이지 파일로 내려받기」와 「파일 불러오기」를 쓰세요.";
     } else if (folderState === "none") {
-      $("folderBody").textContent = "폴더를 한 번 고르면 저장할 때마다 페이지마다 파일 하나씩 그 폴더에도 씁니다. 브라우저 기록을 지워도 남고, OneDrive·구글 드라이브 같은 동기화 폴더에 두면 다른 PC 에서도 같은 표시가 열립니다. 바탕 화면·다운로드 같은 폴더 자체는 크롬이 막으니, 안에 새 폴더(예: 문서\\notelayer)를 만들어 고르세요.";
-      btns.push(el("button", { class: "primary", onclick: pickFolder }, "폴더 고르기"));
+      $("folderBody").textContent = "폴더를 한 번 고르면 저장할 때마다 페이지마다 파일 하나씩 그 폴더에도 씁니다. 브라우저 기록을 지워도 남고, OneDrive·구글 드라이브 같은 동기화 폴더에 두면 다른 PC 에서도 같은 표시가 열립니다."
+        + (IN_POPUP ? " 이 작은 창에서는 크롬이 폴더 창을 열지 않아서, 누르면 새 탭에서 고릅니다." : "");
+      btns.push(folderAction("폴더 고르기", true, pickFolder));
     } else {
       const label = dirName ? `「${dirName}」` : "고른";
       $("folderBody").replaceChildren(el("span", { class: folderState === "granted" ? "ok" : "err" },
         folderState === "granted" ? `${label} 폴더에도 저장하고 있습니다.` : `${label} 폴더를 쓰려면 다시 허용해야 합니다(브라우저를 새로 열면 다시 묻습니다).`));
-      if (folderState !== "granted") btns.push(el("button", { class: "primary", onclick: async () => { await folder(true); await syncFolder(); render(); } }, "폴더 다시 허용"));
-      btns.push(el("button", { onclick: pickFolder }, "다른 폴더로 바꾸기"));
-      btns.push(el("button", { onclick: async () => { await delMeta("dir"); render(); } }, "연결 끊기"));
+      if (folderState !== "granted") btns.push(folderAction("폴더 다시 허용", true, async () => { await folder(true); await syncFolder(); folderChanged(); render(); }));
+      btns.push(folderAction("다른 폴더로 바꾸기", false, pickFolder));
+      btns.push(el("button", { onclick: async () => { await delMeta("dir"); folderChanged(); render(); } }, "연결 끊기"));
     }
     $("folderBtns").replaceChildren(...btns);
   }
+  // 작은 저장 창에서는 폴더 일을 새 탭으로 넘기는 링크, 일반 탭에서는 바로 하는 버튼
+  function folderAction(label, primary, run) {
+    if (!IN_POPUP) return el("button", { class: primary ? "primary" : "", onclick: run }, label);
+    return el("a", { class: primary ? "btnlink primary" : "btnlink", href: "store.html?folder=1", target: "_blank", rel: "noopener",
+      onclick: () => status("새 탭에서 폴더를 고르세요. 고르고 나면 이 창이 저절로 알아챕니다.") }, `${label} (새 탭에서)`);
+  }
+  function folderChanged() { try { bc?.postMessage({ type: "folder" }); } catch {} }
   function renderList(pages) {
     $("count").textContent = pages.length ? `${pages.length}개` : "";
     $("list").replaceChildren(...(pages.length ? pages.map((p) => {
@@ -211,11 +225,14 @@
       await putMeta("dir", dir);
       await folder(true);
       await syncFolder();
-      status(folderState === "granted" ? `「${dir.name}」 폴더를 연결했습니다. 이제 저장할 때마다 이 폴더에도 파일로 씁니다.` : `「${dir.name}」 폴더에 쓰기 허락을 받지 못했습니다. 「폴더 다시 허용」을 눌러 주세요.`, folderState !== "granted");
+      status(folderState === "granted"
+        ? `${dir.name ? `「${dir.name}」` : "고른"} 폴더를 연결했습니다. 이제 저장할 때마다 이 폴더에도 파일로 씁니다.${FOLDER_TAB ? " 이 탭은 닫아도 됩니다." : ""}`
+        : `${dir.name ? `「${dir.name}」` : "고른"} 폴더에 쓰기 허락을 받지 못했습니다. 「폴더 다시 허용」을 눌러 주세요.`, folderState !== "granted");
+      folderChanged();
     } catch (err) {
       status(err?.name === "AbortError"
         // 크롬은 바탕 화면·다운로드·사용자 폴더 자체·드라이브 맨 위처럼 시스템과 겹치는 폴더를 막고, 그런 폴더를 고르면 취소로 돌려준다
-        ? "폴더 고르기가 취소됐습니다. 바탕 화면·다운로드·사용자 폴더 자체·C:\\ 처럼 크롬이 막는 폴더를 골랐다면, 그 안에 새 폴더(예: 문서\\notelayer)를 만들어 그 폴더를 고르세요. 폴더 창이 안 보였다면 다른 창 뒤에 떴을 수 있습니다."
+        ? "폴더 고르기가 취소됐습니다. 바탕 화면·다운로드처럼 크롬이 통째로 막는 폴더를 골랐다면, 그 안의 폴더(예: 문서\\notelayer)를 고르세요."
         : `폴더를 연결하지 못했습니다: ${err?.name || ""} ${err?.message || err}`, true);
     }
     render();
@@ -252,6 +269,12 @@
   };
 
   // 원래 페이지가 닫혔는지 가끔 확인한다
+  // 다른 탭에서 폴더를 고르거나 끊으면 다시 그린다(알림 통로가 없는 브라우저는 창으로 돌아올 때)
+  const refreshFolder = async () => { drawn.folder = null; await syncFolder().catch(() => {}); render(); };
+  bc?.addEventListener("message", (e) => { if (e.data?.type === "folder") refreshFolder(); });
+  window.addEventListener("focus", () => { drawn.folder = null; render(); });
+  if (FOLDER_TAB) status("이 탭에서 폴더를 고르세요. 문서 안의 notelayer 폴더처럼 직접 만든 폴더를 고르면 됩니다.");
+
   let closedShown = false;
   setInterval(() => { if (current && !closedShown && window.opener?.closed) { closedShown = true; render(); } }, 3000);
   render();
