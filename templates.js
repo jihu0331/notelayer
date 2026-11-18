@@ -1,8 +1,11 @@
 // 템플릿 정의. 디자인(색·글꼴)은 app.css 의 [data-template="..."] 변수가, 나머지는 이 데이터가 정한다.
 // 모양의 뜻은 템플릿과 상관없이 같다: circle = 핵심어, highlight = 중요한 문장, wave = 확인이 필요한 곳.
+// levels = 중요도 음영 세 단계(core 진한 음영, some 옅은 음영, rare 흐리게)의 이름, levelRule = AI 에게 주는 등급 기준.
 window.NL_TEMPLATES = {
   "tech": {
     "name": "기술 문서 입문",
+    "levels": { "core": "실무 핵심", "some": "가끔 씀", "rare": "거의 안 씀" },
+    "levelRule": "core = 실무에서 직접 자주 다루고 잘못 쓰면 바로 문제가 나는 것, some = 특정 기능을 만들 때만 다루는 것, rare = 서버·브라우저·도구가 알아서 처리하거나 옛 방식이라 직접 다룰 일이 거의 없는 것",
     "reader": "이 분야를 처음 배우는 개발자·학생 (기초는 알지만 이 문서의 주제는 처음)",
     "hand": false,
     "marks": {
@@ -24,6 +27,8 @@ window.NL_TEMPLATES = {
   },
   "exam": {
     "name": "시험공부 노트",
+    "levels": { "core": "꼭 나옴", "some": "가끔 나옴", "rare": "덜 중요" },
+    "levelRule": "시험에 자주 나오고 다른 내용의 바탕이 되는 것은 core, 가끔 나오거나 응용 문제에만 쓰이는 것은 some, 배경·사례·여담이라 외우지 않아도 되는 것은 rare",
     "reader": "이 단원을 처음 공부하는 수험생",
     "hand": true,
     "marks": {
@@ -43,6 +48,8 @@ window.NL_TEMPLATES = {
   },
   "contract": {
     "name": "계약서·약관",
+    "levels": { "core": "꼭 확인", "some": "읽어 두기", "rare": "일반 조항" },
+    "levelRule": "돈·기한·해지·책임처럼 나에게 직접 영향이 큰 조항은 core, 상황이 생기면 다시 볼 조항은 some, 어느 계약에나 있는 정형 문구는 rare",
     "reader": "계약서를 처음 읽는 세입자",
     "hand": false,
     "marks": {
@@ -62,6 +69,8 @@ window.NL_TEMPLATES = {
   },
   "onboarding": {
     "name": "회사 문서 온보딩",
+    "levels": { "core": "첫 주에 필요", "some": "나중에", "rare": "참고만" },
+    "levelRule": "첫 주 업무에 바로 필요한 절차·규칙은 core, 맡은 일이 생기면 볼 내용은 some, 배경·역사처럼 참고로만 읽을 내용은 rare",
     "reader": "입사 첫 주의 신입 개발자",
     "hand": false,
     "marks": {
@@ -80,6 +89,8 @@ window.NL_TEMPLATES = {
   },
   "review": {
     "name": "첨삭·피드백",
+    "levels": { "core": "살릴 부분", "some": "다듬을 부분", "rare": "줄일 부분" },
+    "levelRule": "글의 강점이라 꼭 살릴 문단은 core, 다듬으면 좋아지는 문단은 some, 겹치거나 근거가 약해 줄여도 되는 문단은 rare",
     "reader": "자기소개서를 고치는 취업 준비생",
     "hand": true,
     "marks": {

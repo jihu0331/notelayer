@@ -31,6 +31,7 @@
     review: { circle: "#15803d", hl: "rgba(134, 239, 172, .45)", wave: "#dc2626" },
   };
   const KINDS = ["circle", "highlight", "wave"];
+  const LEVELS = ["core", "some", "rare"]; // 중요도 음영 단계: 진한 음영 · 옅은 음영 · 흐리게
   const SKIP = "nav,aside,footer,header,form,[role=navigation],[role=complementary],[aria-hidden=true],notelayer-overlay,notelayer-note";
   const BLOCK = "p,div,li,ul,ol,dl,dt,dd,table,tr,td,th,pre,blockquote,h1,h2,h3,h4,h5,h6,section,article,figure,figcaption,main";
   const LEAF = "p,div,li,dt,dd,td,th,pre,blockquote,h1,h2,h3,h4,h5,h6,figcaption";
@@ -246,7 +247,8 @@
     boxes: [],            // { id, label, text, pre, answer, el, mine }
     trs: new Map(),       // 번역: 문단 번호(0부터) → { text, mine }
     concepts: null,
-    show: { circle: true, highlight: true, wave: true, boxes: true, tr: true },
+    imps: [],             // 중요도 음영 { i, j, level, why, mine } — 문단 i..j(0부터) 묶음. level = core | some | rare
+    show: { circle: true, highlight: true, wave: true, boxes: true, tr: true, imp: true },
     focus: null, // 「이것만 또렷하게」: circle | highlight | wave | boxes — 본문의 나머지 글자를 흐리게 하고 이 종류만 남긴다
     editing: false,
     side: ui.side || null, width: ui.width || null,
@@ -315,7 +317,16 @@
     const trs = (Array.isArray(result.translations) ? result.translations : [])
       .filter((t) => t && typeof t.text === "string" && t.text.trim() && n)
       .map((t) => ({ i: guess(Number.isFinite(Number(t.p)) ? Number(t.p) : 1), text: t.text.trim(), mine: !!t.mine }));
-    return { marks, boxes, trs, lost, moved, total: raw.length };
+    // 중요도: AI 가 매긴 문단 범위를 이 페이지 문단 자리로 옮긴다. 겹치면 나중 것이 이긴다
+    let imps = [];
+    for (const x of Array.isArray(result.importance) ? result.importance : []) {
+      if (!x || !LEVELS.includes(x.level) || !Number.isFinite(Number(x.p)) || !n) continue;
+      const a = guess(Number(x.p)), b = guess(Number.isFinite(Number(x.to)) ? Number(x.to) : Number(x.p));
+      const i = Math.min(a, b), j = Math.max(a, b);
+      imps = [...carve(imps, i, j), { i, j, level: x.level, why: typeof x.why === "string" ? tidy(x.why).slice(0, 80) : "", mine: !!x.mine }];
+    }
+    imps.sort((p, q) => p.i - q.i);
+    return { marks, boxes, trs, imps, lost, moved, total: raw.length };
   }
 
   function cleanConcepts(c) {
@@ -340,12 +351,13 @@
       ],
       boxes: sortedBoxes().map((b) => ({ p: boxOrder(b) + 1 || 1, label: b.label, text: b.text, ...(b.pre ? { pre: b.pre } : {}), ...(b.answer ? { answer: b.answer } : {}), ...(b.mine ? { mine: true } : {}) })),
       ...(state.concepts ? { concepts: state.concepts } : {}),
+      ...(state.imps.length ? { importance: state.imps.map((x) => ({ p: x.i + 1, to: x.j + 1, level: x.level, ...(x.why ? { why: x.why } : {}), ...(x.mine ? { mine: true } : {}) })) } : {}),
       ...(state.trs.size ? { translations: [...state.trs].sort((a, b) => a[0] - b[0])
         .map(([i, t]) => ({ p: i + 1, text: t.text, ...(t.mine ? { mine: true } : {}) })) } : {}),
       ...(HOST?.extraData?.() || {}), // 품는 화면의 층(PDF 노트의 손글씨 ink)
     };
   }
-  const hasData = () => !!(state.marks.length || state.orphans.length || state.boxes.length || state.concepts || state.trs.size || HOST?.hasExtra?.());
+  const hasData = () => !!(state.marks.length || state.orphans.length || state.boxes.length || state.concepts || state.imps.length || state.trs.size || HOST?.hasExtra?.());
   let saveTimer = 0;
   // 고칠 때마다 저장 창에 보낸다. 저장 창이 닫혀 있으면 「저장하지 않은 변경」으로 남겨 두었다가 다시 연결되면 보낸다
   function save() {
@@ -670,6 +682,14 @@
     .knob.end i { bottom: 0; }
     @media (pointer: coarse) { .knob i { left: 2px; width: 18px; height: 18px; } }
     .drop-line[hidden], .drag-ghost[hidden], .knob[hidden] { display: none; }
+    /* 중요도 음영: 문단 묶음마다 옅은 바탕 + 왼쪽 막대 + 꼬리표. 거의 안 쓰는 곳은 흐린 막을 덮는다 */
+    .imp-tint, .imp-bar { position: absolute; pointer-events: none; }
+    .imp-tint { border-radius: 4px; }
+    .imp-bar { width: 3px; border-radius: 2px; }
+    .imp-chip { position: absolute; pointer-events: auto; cursor: pointer; padding: 0 7px; height: 18px; border-radius: 999px; white-space: nowrap;
+      font: 600 11px/18px "Pretendard Variable", "Pretendard", "Malgun Gothic", sans-serif; box-shadow: 0 0 0 1px rgba(0,0,0,.06); }
+    .imp-chip.left { transform: translateX(-100%); }
+    .pop .why { white-space: normal; max-width: 300px; padding: 4px 8px; line-height: 1.5; }
     /* 요약 고치기: 상자 끌어 옮기기, 오른쪽 아래 칸에서 글 고치기 */
     .td-node.editable { cursor: grab; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
     .td-node.dragging { z-index: 3; opacity: .92; cursor: grabbing; box-shadow: 0 10px 28px rgba(0,0,0,.25); }
@@ -688,9 +708,10 @@
     :host([data-theme="dark"]) .sheet-detail .danger { color: #f87171; }
     :host([data-theme="dark"]) .sheet-btn.sw-on { background: #3b2f12; border-color: #b45309; color: #fbbf24; }
   ` + PANEL_CSS));
+  const impLayer = h("div", { class: "layer" }); // 중요도 음영(설명 배지·손잡이보다 아래)
   const badgeLayer = h("div", { class: "layer" });
   const pop = h("div", { class: "pop", hidden: true, onmousedown: (e) => e.preventDefault() });
-  shadow.append(badgeLayer);
+  shadow.append(impLayer, badgeLayer);
   // 수정 모드에서 끌어 고치기에 쓰는 화면 조각과 상태(그리기 함수가 먼저 부를 수 있어 여기서 만든다)
   const dragLine = h("div", { class: "drop-line", hidden: true });
   const dragGhost = h("div", { class: "drag-ghost", hidden: true });
@@ -698,6 +719,7 @@
     h("i", { title: side === "start" ? "끌어서 표시가 시작하는 자리 옮기기" : "끌어서 표시가 끝나는 자리 옮기기", onpointerdown: (e) => startKnob(e, side) })));
   shadow.append(dragLine, dragGhost, ...knobs);
   let boxDrag = null, knobFor = null, knobDrag = null;
+  let impSig = ""; // 중요도 음영을 마지막으로 그린 자리(같으면 다시 만들지 않는다)
   let dragEndAt = 0; // 끌기를 막 끝낸 손가락·마우스의 「누르기」 는 무시한다(놓자마자 다른 것이 열리지 않게)
 
   const colors = () => MARK_COLORS[state.tpl] || MARK_COLORS.tech;
@@ -754,6 +776,7 @@
   const queueDraw = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(drawLayer); };
   function drawLayer() {
     drawKnobs();
+    drawImp();
     for (const b of badgeLayer.querySelectorAll(".badge")) b.remove();
     const sx = window.scrollX, sy = window.scrollY;
     renderInline();
@@ -1011,7 +1034,7 @@
     state.root = el;
     state.paras = collectParagraphs(el);
     if (had) {
-      state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.trs = new Map();
+      state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.imps = []; state.trs = new Map();
       apply(data, { restored: true });
       save();
     } else { inlineSig = ""; paint(); drawLayer(); renderResult(); }
@@ -1067,6 +1090,7 @@
           item("highlight", h("span", { class: "mk mk-hl" }), t.marks.highlight, n("highlight")),
           item("wave", h("span", { class: "mk mk-wave" }), t.marks.wave, n("wave")),
           item("boxes", null, "설명", state.boxes.length),
+          ...(state.imps.length ? [eyeOnly("imp", "중요도", state.imps.length)] : []),
           ...(state.trs.size ? [eyeOnly("tr", "번역", state.trs.size)] : []),
           ...(state.orphans.length ? [h("span", {}, `제자리를 잃은 표시 `, h("b", {}, String(state.orphans.length)))] : [])]
         : [h("span", {}, COMPACT ? "이 페이지에 저장된 표시가 아직 없습니다. 「AI 답 넣기」에서 요청문을 복사해 AI 답을 붙여 넣으세요" : "눌러서 요청문을 복사하고 AI 답을 붙여 넣으세요")]),
@@ -1222,7 +1246,7 @@
   }
   function clearSaved() {
     if (!confirm("이 페이지의 표시·설명을 모두 지울까요? 저장한 것도 지워집니다.")) return;
-    state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.concepts = null; state.trs = new Map();
+    state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.imps = []; state.concepts = null; state.trs = new Map();
     paint(); drawLayer(); renderResult(); save();
     setMsg(applyMsg, "모두 지웠습니다.");
   }
@@ -1248,6 +1272,8 @@
     state.orphans = restored ? a.lost : state.orphans.filter((o) => o.mine);
     state.attaching = null;
     state.boxes = restored ? a.boxes : [...myBoxes, ...a.boxes.filter((b) => !haveBox.has(squash(b.text)))];
+    const myImps = state.imps.filter((x) => x.mine);
+    state.imps = restored ? a.imps : [...myImps, ...myImps.reduce((list, m) => carve(list, m.i, m.j), a.imps)].sort((p, q) => p.i - q.i);
     // 번역도 AI 것만 바꾸고 내가 고친 문단은 남긴다
     const trMap = restored ? new Map() : new Map([...state.trs].filter(([, t]) => t.mine));
     for (const t of a.trs) if (!trMap.has(t.i)) trMap.set(t.i, { text: t.text, mine: t.mine });
@@ -1265,6 +1291,7 @@
     const parts = [`${restored ? "저장한 " : ""}표시 ${placed}/${a.total}개, 설명 ${a.boxes.length}개를 얹었습니다`];
     if (state.concepts) parts.push(`개념 ${state.concepts.nodes.length}개`);
     if (a.trs.length) parts.push(`번역 ${a.trs.length}문단`);
+    if (a.imps.length) parts.push(`중요도 ${a.imps.length}묶음`);
     if (a.moved) parts.push(`글이 바뀌어 자리를 다시 잡은 표시 ${a.moved}개`);
     if (a.lost.length) parts.push(restored
       ? `\n제자리를 잃은 표시 ${a.lost.length}개 — 원문이 바뀌어 찾지 못했습니다. 패널 위쪽 목록에서 다시 붙이거나 지울 수 있습니다`
@@ -1322,6 +1349,7 @@
       toggle("highlight", h("span", { class: "sw sw-hl" }), `${t.marks.highlight} ${count("highlight")}`),
       toggle("wave", h("span", { class: "sw sw-wave" }), `${t.marks.wave} ${count("wave")}`),
       toggle("boxes", `설명 ${state.boxes.length}`),
+      ...(state.imps.length ? [toggle("imp", `중요도 ${state.imps.length}`)] : []),
       ...(INLINE_ONLY ? [] : [h("button", { title: "설명 카드를 문단 아래(본문 속)에 둘지, 옆 패널과 배지로 볼지", onclick: () => {
         state.boxMode = state.boxMode === "inline" ? "side" : "inline"; saveUi(); drawLayer(); renderResult(); tuckIfCovering();
       } }, state.boxMode === "inline" ? "설명 위치: 본문 속 ⇄" : "설명 위치: 옆 패널 ⇄")]));
@@ -1920,6 +1948,81 @@
     return card;
   }
 
+  // ── 중요도 음영: AI(또는 내가) 문단 묶음마다 매긴 세 단계. core 는 진한 음영, some 은 옅은 음영, rare 는 흐린 막 ──
+  // 왼쪽 막대 옆 꼬리표를 누르면 그 등급인 이유가 나오고, 수정 모드면 등급을 바꾸거나 지운다
+  const LEVEL_NAMES = { core: "핵심", some: "가끔", rare: "덜 중요" };
+  const levelNames = () => ({ ...LEVEL_NAMES, ...(TEMPLATES[state.tpl].levels || {}) });
+  // [밝은 바탕, 어두운 바탕]
+  const IMP_COLORS = {
+    core: [{ tint: "rgba(245,158,11,.13)", bar: "#f59e0b", chip: "#fef3c7", ink: "#92400e" }, { tint: "rgba(245,158,11,.15)", bar: "#f59e0b", chip: "#3b2f12", ink: "#fbbf24" }],
+    some: [{ tint: "rgba(100,116,139,.08)", bar: "#94a3b8", chip: "#f1f5f9", ink: "#475569" }, { tint: "rgba(148,163,184,.08)", bar: "#64748b", chip: "#2a2f37", ink: "#cbd5e1" }],
+    rare: [{ tint: "rgba(255,255,255,.55)", bar: "#d1d5db", chip: "#f3f4f6", ink: "#6b7280" }, { tint: "rgba(20,22,26,.5)", bar: "#4b5563", chip: "#23272e", ink: "#9ca3af" }],
+  };
+  // 문단 묶음에서 [i, j] 를 도려낸다(걸친 묶음은 앞뒤 남는 부분만 남긴다)
+  function carve(list, i, j) {
+    return list.flatMap((x) => (x.j < i || x.i > j ? [x]
+      : [...(x.i < i ? [{ ...x, j: i - 1 }] : []), ...(x.j > j ? [{ ...x, i: j + 1 }] : [])]));
+  }
+  // 문단 상자: 웹은 문단 요소 상자, PDF 는 글자 줄을 합친 상자(문단 요소에 크기가 없다)
+  function impBox(el) {
+    if (!PDF) { const r = el.getBoundingClientRect(); return r.height ? { l: r.left, r: r.right, t: r.top, b: r.bottom } : null; }
+    const rg = document.createRange(); rg.selectNodeContents(el);
+    const ls = lineRects(rg);
+    return ls.length ? { l: Math.min(...ls.map((x) => x.left)), r: Math.max(...ls.map((x) => x.right)), t: ls[0].top, b: ls[ls.length - 1].bottom } : null;
+  }
+  function drawImp() {
+    if (!state.show.imp || !state.imps.length || state.focus) { if (impSig) { impLayer.replaceChildren(); impSig = ""; } return; }
+    const sx = scrollX, sy = scrollY, dark = host.getAttribute("data-theme") === "dark", names = levelNames();
+    const groups = [];
+    for (const x of state.imps) {
+      const boxes = [];
+      for (let k = x.i; k <= x.j && k < state.paras.length; k++) { const b = impBox(state.paras[k].el); if (b) boxes.push({ l: b.l + sx, r: b.r + sx, t: b.t + sy, b: b.b + sy }); }
+      if (boxes.length) groups.push({ x, boxes });
+    }
+    // 문서 좌표로 그리므로 창을 굴려도 그대로다. 자리가 같으면 다시 만들지 않는다
+    const sig = JSON.stringify([dark, state.tpl, groups.map((g) => [g.x.level, g.x.why, g.boxes.map((b) => [b.l, b.r, b.t, b.b].map(Math.round))])]);
+    if (sig === impSig) return;
+    impSig = sig;
+    const out = [];
+    for (const { x, boxes } of groups) {
+      let c = IMP_COLORS[x.level][dark ? 1 : 0];
+      // 흐린 막은 웹페이지면 그 사이트 바탕색으로 덮는다(어두운 사이트에서 진한 상자처럼 보이지 않게)
+      if (x.level === "rare" && !PDF) c = { ...c, tint: `rgba(${bgOf(state.paras[x.i].el).join(",")},.55)` };
+      const L = Math.min(...boxes.map((b) => b.l)), R = Math.max(...boxes.map((b) => b.r));
+      const T = Math.min(...boxes.map((b) => b.t)), B = Math.max(...boxes.map((b) => b.b));
+      for (const b of boxes) out.push(h("div", { class: "imp-tint", style: `left:${b.l - 6}px;top:${b.t - 3}px;width:${b.r - b.l + 12}px;height:${b.b - b.t + 6}px;background:${c.tint}` }));
+      out.push(h("div", { class: "imp-bar", style: `left:${L - 14}px;top:${T - 3}px;height:${B - T + 6}px;background:${c.bar}` }));
+      // 꼬리표는 왼쪽 여백에. 여백이 좁으면(휴대폰 등) 오른쪽 위에
+      const roomLeft = L - sx > 96;
+      out.push(h("div", { class: `imp-chip${roomLeft ? " left" : ""}`, title: x.why || names[x.level],
+        style: `left:${roomLeft ? L - 20 : R - 6}px;top:${T - (roomLeft ? 1 : 21)}px;background:${c.chip};color:${c.ink}${roomLeft ? "" : ";transform:translateX(-100%)"}`,
+        onclick: (e) => { e.stopPropagation(); showImpTools(x, e.clientX, e.clientY); } }, names[x.level]));
+    }
+    impLayer.replaceChildren(...out);
+  }
+  function showImpTools(x, cx, cy) {
+    const names = levelNames();
+    if (!state.editing) { showPop(cx, cy + 12, [h("span", { class: "why" }, `${names[x.level]} — ${x.why || "이유가 적혀 있지 않습니다"}`)]); return; }
+    showPop(cx, cy + 12, [
+      ...(x.why ? [h("span", { class: "why" }, x.why), h("span", { class: "sep" })] : []),
+      ...LEVELS.map((k) => h("button", { "aria-pressed": String(x.level === k), onclick: () => { x.level = k; x.mine = true; hidePop(); afterChange(); } }, names[k])),
+      h("span", { class: "sep" }),
+      h("button", { onclick: () => { state.imps = state.imps.filter((y) => y !== x); hidePop(); afterChange(); } }, "음영 지우기"),
+    ]);
+  }
+  // 수정 모드에서 글자를 고른 다음 「▤ 중요도」: 고른 글자가 걸친 문단들에 등급을 단다(겹치던 음영은 그 범위만 바뀐다)
+  function pickLevel(range) {
+    const i = paraIndexOf(range.startContainer), j = Math.max(i, paraIndexOf(range.endContainer));
+    if (i < 0) { hidePop(); return; }
+    const r = range.getBoundingClientRect(), names = levelNames();
+    const done = (list) => { state.imps = list.sort((p, q) => p.i - q.i); getSelection()?.removeAllRanges(); hidePop(); afterChange(); };
+    showPop(r.left + r.width / 2, r.bottom + 6, [
+      ...LEVELS.map((k) => h("button", { onclick: () => done([...carve(state.imps, i, j), { i, j, level: k, why: "", mine: true }]) }, names[k])),
+      h("span", { class: "sep" }),
+      h("button", { onclick: () => done(carve(state.imps, i, j)) }, "음영 지우기"),
+    ]);
+  }
+
   // ── 설명 옮기기: 수정 모드에서 카드 왼쪽 손잡이(⋮⋮)를 끌어 다른 문단 아래·다른 설명 앞뒤로 옮긴다 ──
   // 놓을 자리는 파란 줄로 보인다. 화면 위아래 끝으로 끌면 그쪽으로 굴러간다. Esc 로 그만둔다
   function scrollerOf(el) {
@@ -2108,6 +2211,7 @@
         tab = "boxes"; afterChange();
         openCard(b.id)?.querySelector(".txt")?.focus();
       } }, "+ 설명"),
+      h("button", { title: "고른 글자가 걸친 문단에 중요도 음영을 답니다", onclick: () => pickLevel(range) }, "▤ 중요도"),
       h("button", { title: "이 부분을 AI 에게 더 자세히(예시 포함) 묻는 요청문을 복사합니다", onclick: () => deepAsk(range) }, "🔎 자세히 묻기"),
     ]);
   }
@@ -2181,6 +2285,7 @@
     }, 0);
   }
   function onClick(e) {
+    if (!state.editing && !pop.hidden && !e.composedPath().includes(host)) hidePop();
     if (!state.editing || e.composedPath().includes(host) || inNote(e)) return;
     if (Date.now() - dragEndAt < 400) return;
     const sel = getSelection();
@@ -2282,7 +2387,7 @@
       const r = await send("load");
       if (r.record?.data && (replace || !hasData())) {
         const data = r.record.data;
-        if (replace) { state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.concepts = null; state.trs = new Map(); }
+        if (replace) { state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.imps = []; state.concepts = null; state.trs = new Map(); }
         if (TEMPLATES[data.tpl]) { state.tpl = data.tpl; tplSelect.value = data.tpl; }
         const res = apply(data, { restored: true });
         setSaved(`${replace ? "저장 창에서 불러온 파일로 다시 칠했습니다" : "저장해 둔 표시를 불러왔습니다"} · ${fmtTime(r.record.savedAt)}${r.from === "folder" ? " · 폴더의 파일에서" : ""}`
@@ -2410,7 +2515,7 @@
         record: { v: 1, tpl: state.tpl, ...serialize() }, paragraphs: state.paras.map((x) => x.text),
       };
     },
-    restore: (data) => { state.marks = []; state.orphans = []; state.boxes = []; state.concepts = null; state.trs = new Map(); return apply(data, { restored: true }); },
+    restore: (data) => { state.marks = []; state.orphans = []; state.boxes = []; state.imps = []; state.concepts = null; state.trs = new Map(); return apply(data, { restored: true }); },
     destroy,
   };
 })();
