@@ -15,7 +15,9 @@
   // 블로그 같은 다른 사이트가 띄운 작은 저장 창(팝업) 안에서는 크롬이 폴더 고르는 창을 열지 않고 곧바로 「취소」를 돌려준다
   // (실제 크롬 157 에서 확인: 팝업 0.04초 만에 취소, 일반 탭은 정상). 그래서 폴더 고르기·다시 허용은 저장 창을 일반 탭으로 열어 거기서 하고,
   // 고른 결과는 같은 출처끼리 쓰는 알림 통로(BroadcastChannel)로 작은 저장 창에 알린다
-  const FOLDER_TAB = new URLSearchParams(location.search).has("folder");
+  // 새 탭으로 연 저장 창: ?folder=1(폴더 고르기) 또는 ?import=1(파일 불러오기). 작은 팝업에서는 크롬이 고르는 창을 바로 취소한다
+  const IMPORT_TAB = new URLSearchParams(location.search).has("import");
+  const FOLDER_TAB = new URLSearchParams(location.search).has("folder") || IMPORT_TAB;
   const IN_POPUP = !!window.opener && !FOLDER_TAB;
   const bc = "BroadcastChannel" in window ? new BroadcastChannel("notelayer-store") : null;
   let folderState = "none"; // none | granted | prompt
@@ -175,12 +177,20 @@
   const syncFolder = () => S.syncFolder();
 
   $("importBtn").onclick = () => {
+    // 다른 사이트가 띄운 작은 저장 창에서는 크롬이 파일 고르는 창도 열지 않고 바로 「취소」를 돌려준다(폴더 고르기와 같은 제약).
+    // 새 탭에서 고르게 하고, 불러온 결과는 알림 통로로 받아 이 창과 연결된 페이지에 반영한다
+    if (IN_POPUP) {
+      window.open("store.html?import=1", "_blank", "noopener");
+      status("새 탭에서 파일을 고르세요. 불러오면 이 창과 연결된 페이지에 바로 반영됩니다.");
+      return;
+    }
     status("파일 고르는 창을 여는 중… (안 보이면 다른 창 뒤에 열렸을 수 있습니다)");
     try { $("importFile").click(); } catch (err) { status(`파일 고르는 창을 열지 못했습니다: ${err?.message || err}`, true); }
   };
   $("importFile").oncancel = () => status("파일 고르기가 취소됐습니다.");
   $("importFile").onchange = async (e) => {
     let n = 0, here = false;
+    const keys = [];
     for (const f of e.target.files) {
       try {
         const rec = JSON.parse(await f.text());
@@ -188,7 +198,7 @@
         const old = await getPage(rec.key);
         if (!old || (old.savedAt || 0) <= (rec.savedAt || 0)) {
           await putPage({ ...rec, data: clean(rec.data), savedAt: Number(rec.savedAt) || Date.now() });
-          n++;
+          n++; keys.push(rec.key);
           if (current && rec.key === current.key) here = true;
         }
       } catch {}
@@ -199,17 +209,30 @@
     // 페이지는 처음 연결될 때 한 번만 저장본을 꺼내므로, 알리지 않으면 저장 창에는 「저장됨」인데 페이지에는 아무것도 안 보였다
     const live = here && window.opener && !window.opener.closed;
     if (live) try { window.opener.postMessage({ nl: "store", type: "updated", id: 0 }, current.origin); } catch {}
+    // 새 탭에서 불러왔으면 작은 저장 창들에 알린다(그 창이 자기 페이지에 칠하게 한다)
+    if (keys.length) try { bc?.postMessage({ type: "imported", keys }); } catch {}
     status(`파일 ${total}개 중 ${n}개 페이지의 표시를 불러왔습니다${n < total ? "(notelayer 저장 파일이 아니거나 더 새 기록이 이미 있는 것은 건너뛰었습니다)" : ""}.`
-      + (live ? " 지금 연결된 페이지에 바로 칠했습니다." : n ? " 그 페이지를 열고 「이 페이지 위에 표시하기」를 누르면 칠해집니다." : ""), n === 0);
+      + (live ? " 지금 연결된 페이지에 바로 칠했습니다." : IMPORT_TAB && n ? " 열려 있는 저장 창의 페이지에는 바로 칠했습니다. 이 탭은 닫아도 됩니다." : n ? " 그 페이지를 열고 「이 페이지 위에 표시하기」를 누르면 칠해집니다." : ""), n === 0);
     render();
   };
 
   // 원래 페이지가 닫혔는지 가끔 확인한다
   // 다른 탭에서 폴더를 고르거나 끊으면 다시 그린다(알림 통로가 없는 브라우저는 창으로 돌아올 때)
   const refreshFolder = async () => { drawn.folder = null; await syncFolder().catch(() => {}); render(); };
-  bc?.addEventListener("message", (e) => { if (e.data?.type === "folder") refreshFolder(); });
+  bc?.addEventListener("message", (e) => {
+    if (e.data?.type === "folder") refreshFolder();
+    // 다른 탭에서 파일을 불러왔다: 지금 연결된 페이지의 기록이 들어 있으면 그 페이지에 다시 칠하라고 알린다
+    if (e.data?.type === "imported" && Array.isArray(e.data.keys)) {
+      drawn.list = null; drawn.cur = null; render();
+      if (current && e.data.keys.includes(current.key) && window.opener && !window.opener.closed) {
+        try { window.opener.postMessage({ nl: "store", type: "updated", id: 0 }, current.origin); } catch {}
+        status("새 탭에서 불러온 기록을 연결된 페이지에 칠했습니다.");
+      }
+    }
+  });
   window.addEventListener("focus", () => { drawn.folder = null; render(); });
-  if (FOLDER_TAB) status("이 탭에서 폴더를 고르세요. 문서 안의 notelayer 폴더처럼 직접 만든 폴더를 고르면 됩니다.");
+  if (IMPORT_TAB) status("이 탭에서 「파일 불러오기」를 눌러 저장 파일(.notelayer.json)을 고르세요.");
+  else if (FOLDER_TAB) status("이 탭에서 폴더를 고르세요. 문서 안의 notelayer 폴더처럼 직접 만든 폴더를 고르면 됩니다.");
 
   let closedShown = false;
   setInterval(() => { if (current && !closedShown && window.opener?.closed) { closedShown = true; render(); } }, 3000);
