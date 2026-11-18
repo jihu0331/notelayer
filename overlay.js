@@ -858,7 +858,7 @@
           item("boxes", null, "설명", state.boxes.length),
           ...(state.trs.size ? [eyeOnly("tr", "번역", state.trs.size)] : []),
           ...(state.orphans.length ? [h("span", {}, `제자리를 잃은 표시 `, h("b", {}, String(state.orphans.length)))] : [])]
-        : [h("span", {}, COMPACT ? "「AI 답 넣기」에서 요청문을 복사하고 AI 답을 붙여 넣으세요" : "눌러서 요청문을 복사하고 AI 답을 붙여 넣으세요")]),
+        : [h("span", {}, COMPACT ? "이 페이지에 저장된 표시가 아직 없습니다. 「AI 답 넣기」에서 요청문을 복사해 AI 답을 붙여 넣으세요" : "눌러서 요청문을 복사하고 AI 답을 붙여 넣으세요")]),
       COMPACT ? h("div", { class: "mini-acts" },
         h("button", { class: "act", disabled: !state.concepts?.nodes?.length, title: state.concepts ? "개념 구조도를 크게 봅니다" : "요약(개념 구조도)이 아직 없습니다", onclick: stop(openSummary) }, "요약 보기"),
         h("button", { class: `act sw${state.editing ? " on" : ""}`, role: "switch", "aria-checked": String(state.editing),
