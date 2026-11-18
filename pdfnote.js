@@ -46,7 +46,12 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
 
-  const docId = new URLSearchParams(location.search).get("doc");
+  const params = new URLSearchParams(location.search);
+  const docId = params.get("doc");
+  // 예시: 저장소의 예시 문서 본문으로 만든 PDF 에, 같은 문서에 들어 있는 표시·설명·요약을 얹어 보여 준다
+  const SAMPLES = {
+    "http-vs-http2": { pdf: "docs/sample-http2.pdf", name: "HTTP-1.1과 HTTP-2 (notelayer 예시).pdf", doc: "documents/http-vs-http2.js", tpl: "tech" },
+  };
   if (docId) openDoc(docId); else showLibrary();
 
   // ═══════════════ 목록 화면 ═══════════════
@@ -93,9 +98,36 @@
     if (files.length === 1 && added === 1) location.href = `pdf.html?doc=${encodeURIComponent(done[0].id)}`;
   }
 
+  async function openSample() {
+    const key = "http-vs-http2", s = SAMPLES[key];
+    status("예시 PDF 를 여는 중…");
+    try {
+      const r = await fetch(s.pdf);
+      if (!r.ok) throw new Error(`예시 PDF 를 받지 못했습니다(${r.status})`);
+      const { id } = await addFile(new File([await r.blob()], s.name, { type: "application/pdf" }));
+      location.href = `pdf.html?doc=${encodeURIComponent(id)}&sample=${key}`;
+    } catch (err) { status(err.message, true); }
+  }
+  // 예시로 연 PDF 에 아직 기록이 없으면 예시 문서의 표시·설명·요약을 적용한다(적용하면 보통 기록처럼 저장된다)
+  async function applySample(key) {
+    const s = SAMPLES[key];
+    if (!s) return;
+    for (let i = 0; i < 40 && !window.NL_OVERLAY?.info().store; i++) await new Promise((ok) => setTimeout(ok, 150));
+    const ov = window.NL_OVERLAY;
+    if (!ov || ov.info().marks || ov.info().boxes) return;
+    await loadScript(s.doc);
+    const doc = window.NL_DOCS?.[window.NL_DOCS.length - 1];
+    const ann = doc?.annotations?.[s.tpl];
+    if (!ann) return;
+    ov.useTemplate(s.tpl);
+    ov.apply(JSON.stringify(ann));
+    history.replaceState(null, "", `pdf.html?doc=${encodeURIComponent(docId)}`);
+  }
+
   async function showLibrary() {
     $("lib").hidden = false;
     $("pickBtn").onclick = () => $("pickFile").click();
+    $("sampleBtn").onclick = openSample;
     $("pickFile").onchange = (e) => { const fs = [...e.target.files]; e.target.value = ""; if (fs.length) addFiles(fs); };
     const drop = $("drop");
     drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
@@ -265,7 +297,8 @@
       request: (msg) => (msg?.key === key ? S.handle(msg) : Promise.resolve({ type: "error", message: "다른 문서의 기록은 다루지 않습니다" })),
     };
     try { await loadScript("overlay.js"); }
-    catch (err) { loading(`표시 층을 불러오지 못했습니다: ${err.message}`, true); pagesEl.before($("loading")); }
+    catch (err) { loading(`표시 층을 불러오지 못했습니다: ${err.message}`, true); pagesEl.before($("loading")); return; }
+    if (params.get("sample")) applySample(params.get("sample"));
   }
 
   // 원본 그림은 화면 가까이 온 쪽만 그린다. 쪽이 많으면 멀어진 쪽의 그림은 비워 메모리를 아낀다(글자 층·표시는 그대로 남는다)

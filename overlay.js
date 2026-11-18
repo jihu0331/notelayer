@@ -1295,6 +1295,8 @@
       if (state.popup) state.popup.focus(); else setMin(!panel.hasAttribute("data-min"));
     },
     apply: applyText,
+    // 템플릿 바꾸기(저장하지 않는다). 예시 열기처럼 화면이 템플릿을 정해 답을 적용할 때 쓴다
+    useTemplate: (id) => { if (!TEMPLATES[id]) return false; state.tpl = id; tplSelect.value = id; paint(); drawLayer(); renderResult(); return true; },
     info: () => ({ root: state.root.tagName + (state.root.id ? `#${state.root.id}` : ""), paragraphs: state.paras.length,
       first: state.paras[0]?.text, last: state.paras.at(-1)?.text, side: state.side, width: state.width,
       marks: state.marks.length, boxes: state.boxes.length, orphans: state.orphans.length, editing: state.editing, popped: !!state.popup, key: KEY, store: conn.ready }),
