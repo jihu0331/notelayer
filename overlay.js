@@ -9,6 +9,12 @@
   if (window.NL_OVERLAY) { window.NL_OVERLAY.toggle(); return; }
   const TEMPLATES = window.NL_TEMPLATES, PROMPT = window.NL_PROMPT;
   if (!TEMPLATES || !PROMPT) { alert("notelayer: templates.js 와 prompt.js 를 먼저 불러와야 합니다."); return; }
+  // 이 층을 품는 notelayer 화면(예: PDF 노트)이 있으면 그 화면이 본문·문단·주소·저장을 직접 넘겨준다.
+  // { kind, key, root, paragraphs: [{ p, el, text }], request(msg) → 답, inline: false(본문 속 설명 카드를 끼울 수 없는 화면) }
+  // 웹페이지에서 즐겨찾기로 부를 때는 없다
+  const HOST = window.NL_HOST || null;
+  const PDF = HOST?.kind === "pdf"; // 글자 층이 투명한 화면: 글자색을 바꾸지 않고 바탕색·밑줄로만 칠한다
+  const LOCAL = typeof HOST?.request === "function"; // 저장 창 대신 같은 주소의 저장 코드를 바로 부른다
 
   // 표시 색. app.css 의 템플릿 변수와 같은 값이다(그쪽을 고치면 여기도 고친다)
   const MARK_COLORS = {
@@ -30,6 +36,7 @@
   // 같은 페이지 알아보기: 페이지가 밝힌 대표 주소(같은 사이트일 때만)에서 #뒤, 광고 추적 꼬리, 열쇠처럼 보이는 꼬리를 뗀다.
   // 물음표 뒤 글 구분(?id=3 같은 것)은 남긴다. 저장 기록·폴더 파일에는 이 정리한 주소만 남는다(비밀번호 재설정 링크의 열쇠 값 같은 것이 남지 않게)
   function pageKey() {
+    if (HOST?.key) return HOST.key;
     let u = new URL(location.href);
     try { const c = new URL(document.querySelector('link[rel="canonical"]')?.href || "", location.href); if (c.origin === u.origin) u = c; } catch {}
     u.hash = "";
@@ -183,7 +190,7 @@
     editing: false,
     side: ui.side || null, width: ui.width || null,
     // 설명 카드 위치: inline = 해당 문단 바로 아래 본문 속(기본), side = 옆 패널 + 문단 옆 배지
-    boxMode: ui.boxMode === "side" ? "side" : "inline",
+    boxMode: HOST?.inline === false || ui.boxMode === "side" ? "side" : "inline",
     popup: null,
   };
   const paraIndexOf = (node) => {
@@ -461,7 +468,7 @@
     const c = colors(), f = state.focus;
     // 또렷하게 할 때: 본문 글자 전체를 흐리게(nl-ov-dim) 칠하고, 고른 종류만 그 위에 진한 글자색으로 다시 칠한다(우선순위가 높은 칠이 이긴다)
     const ink = "#111827";
-    pageStyle.textContent = `::highlight(nl-ov-dim){color:rgba(120,124,132,.42)}
+    pageStyle.textContent = PDF ? pdfMarkCss(c, f) : `::highlight(nl-ov-dim){color:rgba(120,124,132,.42)}
 ::highlight(nl-ov-key){color:${c.circle};text-decoration:underline solid ${c.circle};text-decoration-thickness:2px;text-underline-offset:3px}
 ::highlight(nl-ov-hl){background-color:${c.hl}${f === "highlight" ? `;color:${ink}` : ""}}
 ::highlight(nl-ov-wave){text-decoration:underline wavy ${c.wave};text-decoration-thickness:1.5px;text-underline-offset:4px${f === "wave" ? `;color:${ink}` : ""}}
@@ -476,6 +483,16 @@
     set("nl-ov-key", of("circle"), 2);
     set("nl-ov-hl", of("highlight"), 1);
     set("nl-ov-wave", of("wave"), 1);
+  }
+  // PDF 처럼 글자 층이 투명한 화면: 글자색을 바꾸면 원본 그림 위에 다른 글꼴의 글자가 겹쳐 보인다. 그래서 바탕색과 밑줄로만 칠하고,
+  // 흐리게 하기는 글자 위에 흰 막을 덮는 방식으로 한다(또렷하게 할 종류는 제 색 바탕을 한 겹 더 깐다)
+  const tint = (hex, a) => { const n = parseInt(String(hex).slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; };
+  function pdfMarkCss(c, f) {
+    return `::highlight(nl-ov-dim){background-color:rgba(255,255,255,.66)}
+::highlight(nl-ov-key){background-color:${tint(c.circle, f === "circle" ? 0.3 : 0.14)};text-decoration:underline solid ${c.circle};text-decoration-thickness:2px;text-underline-offset:2px}
+::highlight(nl-ov-hl){background-color:${c.hl}}
+::highlight(nl-ov-wave){${f === "wave" ? `background-color:${tint(c.wave, 0.16)};` : ""}text-decoration:underline wavy ${c.wave};text-decoration-thickness:1.5px;text-underline-offset:2px}
+::highlight(nl-ov-flash){background-color:rgba(245,158,11,.4)}`;
   }
   // 작은 상자·패널에서 보이기/숨기기, 또렷하게를 바꾼 다음 다시 그린다
   function setShow(k, on) { state.show[k] = on; if (!on && state.focus === k) state.focus = null; refreshMarks(); }
@@ -656,7 +673,7 @@
     grip,
     h("header", {}, h("b", {}, "notelayer"), tplSelect, editBtn, sideBtn, popBtn,
       h("button", { class: "icon dock-only", title: "접기", onclick: () => setMin(true) }, "—"),
-      h("button", { class: "icon", title: "닫기(저장한 표시는 남는다)", onclick: destroy }, "✕")),
+      HOST ? null : h("button", { class: "icon", title: "닫기(저장한 표시는 남는다)", onclick: destroy }, "✕")),
     h("div", { class: "edit-bar" }, "수정 모드 — 본문 글자를 끌어 골라 표시·설명을 달고, 표시를 눌러 종류를 바꾸거나 지웁니다. 설명 카드는 글을 눌러 바로 고칩니다."),
     h("div", { class: "body" }, saveBar, steps, resultBox));
   // 도구 막대는 패널보다 위에 그려야 패널 옆 글자를 골라도 눌린다
@@ -667,7 +684,7 @@
     pill.hidden = !min;
     renderMini();
   }
-  const saveUi = () => store.set(UI_KEY, { side: state.side, width: state.width, boxMode: state.boxMode });
+  const saveUi = () => store.set(UI_KEY, { side: state.side, width: state.width, boxMode: HOST?.inline === false ? ui.boxMode : state.boxMode });
 
   // 본문 양옆 빈자리 중 넓은 쪽에, 그 폭에 맞춰 둔다. 자리가 모자라면 기본 폭으로 겹쳐 두고 별도 창을 권한다
   function autoPlace() {
@@ -803,9 +820,9 @@
       toggle("highlight", h("span", { class: "sw sw-hl" }), `${t.marks.highlight} ${count("highlight")}`),
       toggle("wave", h("span", { class: "sw sw-wave" }), `${t.marks.wave} ${count("wave")}`),
       toggle("boxes", `설명 ${state.boxes.length}`),
-      h("button", { title: "설명 카드를 문단 아래(본문 속)에 둘지, 옆 패널과 배지로 볼지", onclick: () => {
+      ...(HOST?.inline === false ? [] : [h("button", { title: "설명 카드를 문단 아래(본문 속)에 둘지, 옆 패널과 배지로 볼지", onclick: () => {
         state.boxMode = state.boxMode === "inline" ? "side" : "inline"; saveUi(); drawLayer(); renderResult(); tuckIfCovering();
-      } }, state.boxMode === "inline" ? "설명 위치: 본문 속 ⇄" : "설명 위치: 옆 패널 ⇄"));
+      } }, state.boxMode === "inline" ? "설명 위치: 본문 속 ⇄" : "설명 위치: 옆 패널 ⇄")]));
     const nodes = state.concepts?.nodes || [];
     tabs.replaceChildren(
       h("button", { "aria-selected": String(tab === "boxes"), onclick: () => { tab = "boxes"; renderResult(); } }, `설명 ${state.boxes.length}`),
@@ -1108,6 +1125,7 @@
   const msgFor = (type, id, extra = {}) => ({ nl: "page", type, id, key: KEY, title: document.title, ...extra });
   function setSaved(text, err = false) { savedMsg.className = err ? "msg err" : "msg"; savedMsg.textContent = text; }
   function openStore() {
+    if (LOCAL) { connect(); return null; }
     if (!BASE) return null;
     // 로컬 시험 서버에서 불렀으면 시험용 저장 창 이름을 따로 써서 공개용 저장 창을 덮지 않는다
     const storeName = /^http:\/\/(localhost|127\.0\.0\.1)[:/]/.test(BASE) ? "notelayer-store-dev" : "notelayer-store";
@@ -1121,6 +1139,14 @@
     conn.ready = false;
     clearInterval(conn.helloT);
     renderStore();
+    if (LOCAL) {
+      HOST.request(msgFor("hello", 0)).then((d) => {
+        conn.ready = true; conn.folder = !!d?.folder;
+        renderStore();
+        onStoreReady();
+      }).catch((err) => setSaved(`저장소를 열지 못했습니다: ${err?.message || err}`, true));
+      return;
+    }
     if (!conn.win) return;
     let n = 0;
     conn.helloT = setInterval(() => {
@@ -1129,6 +1155,13 @@
     }, 250);
   }
   function send(type, extra) {
+    if (LOCAL) {
+      return HOST.request(msgFor(type, ++conn.seq, extra)).then((d) => {
+        if (!d || d.type === "error") throw new Error(d?.message || "저장소가 답하지 않습니다");
+        if (d.type === "saved") conn.folder = !!d.file;
+        return d;
+      });
+    }
     return new Promise((ok, no) => {
       if (!conn.ready || !conn.win || conn.win.closed) { no(new Error("저장 창이 닫혀 있습니다")); return; }
       const id = ++conn.seq;
@@ -1172,6 +1205,16 @@
     }
   }
   function renderStore() {
+    if (LOCAL) {
+      storeLive = conn.ready;
+      renderMini();
+      storeOpenBtn.hidden = true;
+      storeState.className = conn.ready ? "msg" : "msg err";
+      storeState.textContent = conn.ready
+        ? `● 이 PC 에 저장합니다${conn.folder ? "(연결한 폴더에도 파일로)" : ""}. 서버로 보내지 않습니다.`
+        : "○ 저장소를 여는 중…";
+      return;
+    }
     const live = conn.win && !conn.win.closed;
     storeLive = !!(conn.ready && live);
     renderMini();
@@ -1203,11 +1246,11 @@
   function onPageHide() { if (state.popup) try { state.popup.close(); } catch {} }
 
   // ── 시작 ──
-  state.root = findRoot();
-  state.paras = collectParagraphs(state.root);
+  state.root = HOST?.root || findRoot();
+  state.paras = HOST?.paragraphs || collectParagraphs(state.root);
   const cut = (s) => (s.length > 36 ? `${s.slice(0, 36)}…` : s);
   foundMsg.textContent = state.paras.length
-    ? `본문 문단 ${state.paras.length}개를 찾았습니다. 블로그 옆 메뉴·댓글은 뺐습니다.\n첫 문단: ${cut(state.paras[0].text)}\n끝 문단: ${cut(state.paras[state.paras.length - 1].text)}`
+    ? `본문 문단 ${state.paras.length}개를 찾았습니다.${HOST ? "" : " 블로그 옆 메뉴·댓글은 뺐습니다."}\n첫 문단: ${cut(state.paras[0].text)}\n끝 문단: ${cut(state.paras[state.paras.length - 1].text)}`
     : "본문을 찾지 못했습니다.";
   autoPlace();
   placePanel();
@@ -1222,18 +1265,21 @@
 
   paint();
   // 즐겨찾기 버튼이 누르는 순간 저장 창을 먼저 열어 둔다(파일을 다 받은 뒤에 열면 팝업 차단에 걸린다)
-  addEventListener("message", onStoreMessage);
-  conn.win = window.__NL_STORE_WIN || null;
-  try { delete window.__NL_STORE_WIN; } catch {}
-  conn.watchT = setInterval(() => { if (conn.ready && (!conn.win || conn.win.closed)) { conn.ready = false; renderStore(); } }, 2000);
-  // 저장 창을 먼저 열지 않는 예전 즐겨찾기로 불렀으면 여기서 연다. 누른 지 몇 초 안이라 대개 팝업 차단에 걸리지 않는다.
-  // 막히면 openStore 가 「저장 창 열기」를 누르라고 알린다
-  if (!conn.win && BASE) openStore(); else connect();
+  if (LOCAL) connect();
+  else {
+    addEventListener("message", onStoreMessage);
+    conn.win = window.__NL_STORE_WIN || null;
+    try { delete window.__NL_STORE_WIN; } catch {}
+    conn.watchT = setInterval(() => { if (conn.ready && (!conn.win || conn.win.closed)) { conn.ready = false; renderStore(); } }, 2000);
+    // 저장 창을 먼저 열지 않는 예전 즐겨찾기로 불렀으면 여기서 연다. 누른 지 몇 초 안이라 대개 팝업 차단에 걸리지 않는다.
+    // 막히면 openStore 가 「저장 창 열기」를 누르라고 알린다
+    if (!conn.win && BASE) openStore(); else connect();
+  }
 
   window.NL_OVERLAY = {
     // 버튼을 다시 누르면: 저장 창이 닫혀 있으면 다시 열고 패널을 보이고, 아니면 패널을 접고 편다
     toggle: () => {
-      if (BASE && (!conn.win || conn.win.closed)) { openStore(); setMin(false); return; }
+      if (!LOCAL && BASE && (!conn.win || conn.win.closed)) { openStore(); setMin(false); return; }
       if (state.popup) state.popup.focus(); else setMin(!panel.hasAttribute("data-min"));
     },
     apply: applyText,
