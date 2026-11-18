@@ -938,6 +938,7 @@
 
   // 새 AI 답은 AI 것만 바꾸고 내가 단 표시·설명은 남긴다(notelayer 화면과 같은 규칙). 저장본을 열 때는 그대로 되살린다
   function apply(result, { restored = false } = {}) {
+    if (!restored && result?.add) return applyAdd(result);
     if (!restored && (state.marks.some((m) => !m.mine) || state.boxes.some((b) => !b.mine))
       && !confirm("지금 있는 AI 표시·설명을 이 답으로 바꿀까요? 내가 단 표시와 설명은 남습니다.")) return null;
     const a = anchor(result);
@@ -966,6 +967,38 @@
     setMsg(applyMsg, parts.join(" · "));
     steps.open = false;
     return { placed, total: a.total, boxes: a.boxes.length, lost: a.lost.map((x) => x.quote), moved: a.moved, orphans: state.orphans.length };
+  }
+
+  // 「자세히 묻기」 답: 지금 있는 표시·설명은 그대로 두고 설명만 더한다
+  function applyAdd(result) {
+    const a = anchor({ boxes: result.boxes });
+    if (!a.boxes.length) { setMsg(applyMsg, "더할 설명을 찾지 못했습니다.", true); return null; }
+    state.boxes.push(...a.boxes);
+    afterChange();
+    setMsg(applyMsg, `설명 ${a.boxes.length}개를 더했습니다. 해당 문단 아래에서 볼 수 있습니다.`);
+    steps.open = false;
+    if (COMPACT) setMin(true);
+    setTimeout(() => openCard(a.boxes[0].id), 50);
+    return { placed: 0, total: 0, boxes: a.boxes.length, lost: [], moved: 0, orphans: state.orphans.length };
+  }
+  // 고른 글자가 걸친 문단(최대 4개)과 앞뒤 한 문단씩을 담아 「더 자세히」 요청문을 복사하고, 답을 붙여 넣을 칸을 연다
+  async function deepAsk(range) {
+    const i = paraIndexOf(range.startContainer), j = paraIndexOf(range.endContainer);
+    if (i < 0) { hidePop(); return; }
+    const last = Math.min(Math.max(i, j), i + 3);
+    const P = state.paras, pick = (k) => ({ p: k + 1, text: P[k].text });
+    const targets = []; for (let k = i; k <= last; k++) targets.push(pick(k));
+    const context = [i - 1, last + 1].filter((k) => k >= 0 && k < P.length).map(pick);
+    const els = new Set(targets.map((x) => P[x.p - 1].el));
+    const existing = state.boxes.filter((b) => els.has(b.el)).map((b) => ({ p: boxOrder(b) + 1, text: b.text }));
+    const text = PROMPT.buildFocus({ title: document.title, targets, context, existing, template: TEMPLATES[state.tpl] });
+    getSelection()?.removeAllRanges(); hidePop();
+    const ok = await copyText(text);
+    setMin(false);
+    steps.open = true;
+    setMsg(copyMsg, ok ? `p ${targets.map((x) => x.p).join(", ")} 을 더 자세히 묻는 요청문을 복사했습니다(${text.length.toLocaleString()}자). 쓰는 AI 에 붙여 넣고, 받은 답을 아래 칸에 붙여 넣어 「적용」하세요. 지금 있는 설명은 그대로 두고 더하기만 합니다.` : "복사하지 못했습니다.", !ok);
+    answer.value = "";
+    answer.focus();
   }
 
   let tab = "boxes";
@@ -1412,6 +1445,7 @@
         tab = "boxes"; afterChange();
         openCard(b.id)?.querySelector(".txt")?.focus();
       } }, "+ 설명"),
+      h("button", { title: "이 부분을 AI 에게 더 자세히(예시 포함) 묻는 요청문을 복사합니다", onclick: () => deepAsk(range) }, "🔎 자세히 묻기"),
     ]);
   }
   function showMarkTools(m, x, y) {
@@ -1442,7 +1476,19 @@
   // 본문 속 카드 안을 누르거나 글자를 고를 때는 표시 도구를 띄우지 않는다
   const inNote = (e) => e.composedPath().some((n) => n.tagName === "NOTELAYER-NOTE");
   function onMouseUp(e) {
-    if ((!state.editing && !state.attaching) || e.composedPath().includes(host) || inNote(e)) return;
+    if (e.composedPath().includes(host) || inNote(e)) return;
+    if (!state.editing && !state.attaching) {
+      if (!COMPACT) return;
+      setTimeout(() => {
+        const sel = getSelection();
+        if (!sel?.rangeCount || sel.isCollapsed) { hidePop(); return; }
+        const r = sel.getRangeAt(0);
+        if (!state.root.contains(r.commonAncestorContainer) || squash(r.toString()).length < 2) { hidePop(); return; }
+        const rr = r.getBoundingClientRect(), range = r.cloneRange();
+        showPop(rr.left + rr.width / 2, rr.bottom + 6, [h("button", { title: "이 부분을 AI 에게 더 자세히(예시 포함) 묻는 요청문을 복사합니다", onclick: () => deepAsk(range) }, "🔎 자세히 묻기")]);
+      }, 0);
+      return;
+    }
     setTimeout(() => {
       const sel = getSelection();
       if (!sel?.rangeCount || sel.isCollapsed) return;

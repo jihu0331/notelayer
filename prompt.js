@@ -39,6 +39,32 @@
     ].join("\n");
   }
 
+  // 고른 문단만 더 자세히 설명해 달라는 짧은 요청문. 문서 전체 요청은 답 길이 한계 때문에 어려운 문단마다 예시를 넉넉히 달기 어렵다.
+  // targets: 설명할 문단 [{p, text}], context: 앞뒤 문맥 문단 [{p, text}], existing: 그 문단에 이미 단 설명 글
+  function buildFocus({ title, targets, context = [], existing = [], template: t }) {
+    const labels = Object.keys(t.boxes);
+    const ps = targets.map((x) => x.p);
+    return [
+      "너는 notelayer 의 설명을 만든다. notelayer 는 원문을 고치지 않고 그 위에 설명을 얹어 보여 준다.",
+      `아래 문서에서 읽는 사람이 어려워한 문단(p ${ps.join(", ")})을 더 자세히 설명해서, 다른 말 없이 JSON 하나만 돌려줘.`,
+      "",
+      `읽는 사람: ${t.reader}`,
+      `설명 종류(label, 이 중에서만): ${labels.join(", ")}`,
+      "",
+      "지킬 것",
+      "1. 문단마다 설명 2-4개: 그 문단이 무엇을 말하는지 쉬운 말 풀이, 작은 수로 직접 해 본 예시(pre 에 단계마다 실제 값을 적는다. 계산은 검산해서 맞는 것만), 필요하면 먼저 알아야 할 것.",
+      "2. 기호는 처음 나올 때 무엇을 뜻하는지 풀어 준다. 왜 그렇게 되는지(직관)를 한 문장 넣는다.",
+      "3. 이미 단 설명과 겹치지 않게, 덧붙이는 내용만 쓴다.",
+      "4. 확실하지 않은 사실·숫자는 쓰지 않는다. HTML 은 쓰지 않는다. 설명은 한국어로 쓴다. 따옴표가 필요하면 큰따옴표 대신 「」를 쓴다. 선·화살표 그림은 영문·숫자·기호로만 그린다.",
+      "",
+      `돌려줄 모양: {"add":true,"boxes":[{"p":${ps[0]},"label":"${labels[0]}","text":"설명","pre":"(선택) 단계별 예시"}]}`,
+      "",
+      ...(existing.length ? ["이미 단 설명:", ...existing.map((e) => `- (p ${e.p}) ${e.text}`), ""] : []),
+      `문서 「${title}」 의 해당 부분 (p 는 문단 번호, 설명할 문단 앞뒤는 문맥으로만 본다):`,
+      JSON.stringify([...context, ...targets].sort((a, b) => a.p - b.p).map((b) => ({ p: b.p, text: b.text, ...(ps.includes(b.p) ? { explain: true } : {}) }))),
+    ].join("\n");
+  }
+
   // LLM 답에서 JSON 을 꺼낸다. 코드 블록·앞뒤 말·문서 파일 모양(window.NL_DOCS.push)도 받아 준다
   function parseAnswer(text, templateId) {
     const s = String(text).replace(/```(?:json|js|javascript)?/gi, "");
@@ -61,5 +87,5 @@
     return obj;
   }
 
-  window.NL_PROMPT = { build, parseAnswer };
+  window.NL_PROMPT = { build, buildFocus, parseAnswer };
 })();
