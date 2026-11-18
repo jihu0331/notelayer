@@ -1,0 +1,281 @@
+// notelayer 저장 창 — 웹페이지 위 표시 층(overlay.js)이 표시·설명을 이 PC 에 저장하고 다시 꺼낼 때 쓰는 창.
+// notelayer 주소에서 열리므로 다른 사이트는 저장한 내용을 꺼내 가지 못한다. 서버로 보내지 않는다.
+// 다만 표시는 그 페이지 위에 그려지므로, 그 사이트 자신은 자기 페이지에 단 메모를 볼 수 있다(화면 문구도 그렇게 쓴다).
+// - 기본: 이 브라우저의 notelayer 칸(IndexedDB)
+// - 선택: 사용자가 고른 PC 폴더에 페이지마다 파일 하나(크롬·엣지의 폴더 쓰기 기능). 동기화 폴더에 두면 다른 PC 에서도 열린다
+// 보안: 메시지를 보낸 창이 이 창을 연 페이지(opener)이고, 요청한 기록의 주소가 그 페이지와 같은 출처일 때만 응답한다.
+//       또 이 창 하나는 처음 인사한 페이지 한 개의 기록만 다룬다(같은 사이트의 다른 글 기록을 줄줄이 꺼내 가지 못하게).
+//       그래서 다른 사이트가 이 창을 열어도 남의 페이지 기록은 꺼내 가지 못한다. 받은 내용은 글자로만 그린다.
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const MAX_BYTES = 4 * 1024 * 1024;
+
+  // ── 이 브라우저의 notelayer 칸 ──
+  let dbp = null;
+  const db = () => (dbp ??= new Promise((ok, no) => {
+    const r = indexedDB.open("notelayer-store", 1);
+    r.onupgradeneeded = () => { r.result.createObjectStore("pages", { keyPath: "key" }); r.result.createObjectStore("meta"); };
+    r.onsuccess = () => ok(r.result);
+    r.onerror = () => no(r.error);
+  }));
+  const req = (r) => new Promise((ok, no) => { r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); });
+  const os = async (name, mode = "readonly") => (await db()).transaction(name, mode).objectStore(name);
+  const getPage = async (key) => req((await os("pages")).get(key));
+  const putPage = async (rec) => req((await os("pages", "readwrite")).put(rec));
+  const delPage = async (key) => req((await os("pages", "readwrite")).delete(key));
+  const allPages = async () => req((await os("pages")).getAll());
+  const getMeta = async (k) => req((await os("meta")).get(k));
+  const putMeta = async (k, v) => req((await os("meta", "readwrite")).put(v, k));
+  const delMeta = async (k) => req((await os("meta", "readwrite")).delete(k));
+
+  // ── 내 PC 폴더 ──
+  const canFolder = "showDirectoryPicker" in window;
+  // 블로그 같은 다른 사이트가 띄운 작은 저장 창(팝업) 안에서는 크롬이 폴더 고르는 창을 열지 않고 곧바로 「취소」를 돌려준다
+  // (실제 크롬 157 에서 확인: 팝업 0.04초 만에 취소, 일반 탭은 정상). 그래서 폴더 고르기·다시 허용은 저장 창을 일반 탭으로 열어 거기서 하고,
+  // 고른 결과는 같은 출처끼리 쓰는 알림 통로(BroadcastChannel)로 작은 저장 창에 알린다
+  const FOLDER_TAB = new URLSearchParams(location.search).has("folder");
+  const IN_POPUP = !!window.opener && !FOLDER_TAB;
+  const bc = "BroadcastChannel" in window ? new BroadcastChannel("notelayer-store") : null;
+  let folderState = "none"; // none | granted | prompt
+  async function folder(ask = false) {
+    const dir = await getMeta("dir").catch(() => null);
+    if (!dir) { folderState = "none"; return null; }
+    let p = await dir.queryPermission({ mode: "readwrite" });
+    if (p !== "granted" && ask) p = await dir.requestPermission({ mode: "readwrite" });
+    folderState = p === "granted" ? "granted" : "prompt";
+    return p === "granted" ? dir : null;
+  }
+  function hash(s) { let h = 2166136261; for (const c of s) { h ^= c.codePointAt(0); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); }
+  // 파일 이름은 주소로 정해진다. 다른 PC 에서 같은 폴더를 연결하면 같은 이름으로 찾는다. 물음표 뒤는 이름에 넣지 않고 끝의 짧은 해시로만 구분한다
+  function fileName(key) {
+    const u = new URL(key);
+    const slug = `${u.host}${u.pathname}`.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 80);
+    return `${slug}-${hash(key)}.notelayer.json`;
+  }
+  async function writeFile(dir, rec) {
+    const w = await (await dir.getFileHandle(fileName(rec.key), { create: true })).createWritable();
+    await w.write(JSON.stringify(rec, null, 1));
+    await w.close();
+  }
+  async function readFile(dir, key) {
+    try { return JSON.parse(await (await (await dir.getFileHandle(fileName(key))).getFile()).text()); } catch { return null; }
+  }
+  async function removeFile(dir, key) { try { await dir.removeEntry(fileName(key)); } catch {} }
+
+  // ── 표시 층과 주고받기 ──
+  let current = null; // { key, url, title }
+  const sameOrigin = (key, origin) => { try { return new URL(key).origin === origin; } catch { return false; } };
+  const httpUrl = (u) => { try { const x = new URL(u); return x.protocol === "https:" || x.protocol === "http:" ? x.href : null; } catch { return null; } };
+  function clean(data) {
+    const s = JSON.stringify(data ?? null);
+    if (s.length > MAX_BYTES) throw new Error("저장할 내용이 너무 큽니다");
+    return JSON.parse(s);
+  }
+  const counts = (data) => ({ marks: Array.isArray(data?.marks) ? data.marks.length : 0, boxes: Array.isArray(data?.boxes) ? data.boxes.length : 0 });
+
+  // 로컬 시험 서버(localhost)에서만: 시험용 즐겨찾기가 표시 층 코드를 달라고 하면 이 창이 자기 서버에서 읽어 넘겨준다.
+  // 블로그 페이지가 localhost 에서 직접 파일을 받으면 크롬이 사이트마다 「로컬 네트워크 액세스」 허락을 요구하지만,
+  // 따로 연 창끼리 주고받는 것은 허락이 필요 없다. 넘겨주는 것은 공개된 앱 코드뿐이다
+  const DEV = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+  const devCode = async () => (await Promise.all(["templates.js", "prompt.js", "overlay.js"]
+    .map((f) => fetch(`${f}?v=${Date.now()}`, { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(f); return r.text(); })))).join("\n;\n");
+
+  window.addEventListener("message", async (e) => {
+    const d = e.data;
+    if (d?.nl === "dev-code-req") {
+      if (DEV && window.opener && e.source === window.opener) devCode().then((code) => e.source.postMessage({ nl: "dev-code", code }, e.origin)).catch(() => {});
+      return;
+    }
+    if (!d || d.nl !== "page" || !window.opener || e.source !== window.opener) return;
+    const reply = (msg) => e.source.postMessage({ nl: "store", id: d.id, ...msg }, e.origin);
+    if (typeof d.key !== "string" || !sameOrigin(d.key, e.origin)) { reply({ type: "error", message: "요청한 주소가 이 페이지의 주소와 맞지 않습니다" }); return; }
+    // 닫힌 쪽이 기본: 인사로 페이지가 정해지기 전에는 다른 요청을 받지 않고, 정해진 다음에는 그 페이지 하나만 다룬다
+    if (!current && d.type !== "hello") { reply({ type: "error", message: "아직 연결되지 않았습니다" }); return; }
+    if (current && d.key !== current.key) { reply({ type: "error", message: "이 저장 창은 다른 페이지와 연결되어 있습니다" }); return; }
+    try {
+      if (d.type === "hello") {
+        // 연결된 다음 다시 오는 인사(같은 페이지가 되풀이해 보낸 것)는 연결을 바꾸지 않고 답만 한다
+        current ??= { key: d.key, url: httpUrl(d.key) || d.key, title: String(d.title || "").slice(0, 300) };
+        reply({ type: "ready", folder: !!(await folder()) });
+        render();
+      } else if (d.type === "load") {
+        let rec = await getPage(d.key), from = "browser";
+        if (!rec) {
+          const dir = await folder();
+          const f = dir && await readFile(dir, d.key);
+          if (f && f.key === d.key) { rec = f; from = "folder"; await putPage(rec); }
+        }
+        reply({ type: "loaded", record: rec ? { data: rec.data, savedAt: rec.savedAt } : null, from });
+        render();
+      } else if (d.type === "save") {
+        const rec = { v: 1, key: d.key, url: httpUrl(d.key) || d.key, title: String(d.title || "").slice(0, 300), savedAt: Date.now(),
+          data: clean(d.data), paragraphs: Array.isArray(d.paragraphs) ? clean(d.paragraphs.filter((t) => typeof t === "string")) : [] };
+        await putPage(rec);
+        let file = false;
+        const dir = await folder();
+        if (dir) try { await writeFile(dir, rec); file = true; } catch {}
+        reply({ type: "saved", at: rec.savedAt, file });
+        render();
+      } else if (d.type === "delete") {
+        await delPage(d.key);
+        const dir = await folder();
+        if (dir) await removeFile(dir, d.key);
+        reply({ type: "deleted" });
+        render();
+      }
+    } catch (err) {
+      reply({ type: "error", message: String(err?.message || err) });
+    }
+  });
+
+  // ── 화면 ──
+  const fmt = (t) => new Date(t).toLocaleString();
+  const el = (tag, props = {}, ...kids) => {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(props)) {
+      if (v == null || v === false) continue;
+      if (k.startsWith("on")) n.addEventListener(k.slice(2), v); else if (k === "class") n.className = v; else n.setAttribute(k, v);
+    }
+    for (const kid of kids.flat()) if (kid != null && kid !== false) n.append(kid instanceof Node ? kid : String(kid));
+    return n;
+  };
+  function download(rec) {
+    const a = el("a", { href: URL.createObjectURL(new Blob([JSON.stringify(rec, null, 1)], { type: "application/json" })), download: fileName(rec.key) });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+
+  // 화면은 블로그 쪽 메시지가 올 때마다 다시 그린다. 내용이 그대로인 칸은 다시 만들지 않는다 —
+  // 누르는 도중에 버튼이 새것으로 바뀌면 클릭이 사라졌다(창이 막 열려 연결 인사가 여러 번 오는 동안)
+  const drawn = {};
+  const changed = (part, sig) => (drawn[part] === sig ? false : ((drawn[part] = sig), true));
+  async function render() {
+    const pages = (await allPages().catch(() => [])).sort((a, b) => b.savedAt - a.savedAt);
+    await folder().catch(() => null);
+    const dirName = folderState === "none" ? "" : (await getMeta("dir").catch(() => null))?.name || "";
+    // 지금 페이지
+    const cur = current && pages.find((p) => p.key === current.key);
+    const opener = window.opener;
+    if (changed("cur", JSON.stringify([current?.key, current?.title, !!opener, opener?.closed, cur?.savedAt, cur && counts(cur.data)]))) $("curBody").replaceChildren(
+      !current ? (opener ? "표시 층과 연결을 기다리는 중…" : "웹페이지에서 「이 페이지 위에 표시하기」를 누르면 이 창이 그 페이지와 연결됩니다.")
+        : el("div", {}, el("div", { class: "title" }, current.title || current.key),
+          el("div", { class: cur ? "muted ok" : "muted" }, cur
+            ? `저장됨 · ${fmt(cur.savedAt)} · 표시 ${counts(cur.data).marks}개 · 설명 ${counts(cur.data).boxes}개`
+            : "아직 저장한 표시가 없습니다. 답을 적용하거나 고치면 자동으로 저장됩니다."),
+          opener?.closed ? el("div", { class: "muted" }, "원래 페이지가 닫혔습니다. 이 창은 닫아도 됩니다.") : null,
+          cur ? el("div", { class: "row" }, el("button", { onclick: () => download(cur) }, "이 페이지 파일로 내려받기")) : null));
+    // 폴더
+    if (changed("folder", JSON.stringify([canFolder, folderState, dirName]))) renderFolder(dirName);
+    // 목록
+    if (changed("list", JSON.stringify([current?.key, pages.map((p) => [p.key, p.savedAt, p.title])]))) renderList(pages);
+  }
+  function renderFolder(dirName) {
+    const btns = [];
+    if (!canFolder) {
+      $("folderBody").textContent = "이 브라우저는 폴더에 직접 쓰는 기능이 없습니다(크롬·엣지에서 됩니다). 대신 「이 페이지 파일로 내려받기」와 「파일 불러오기」를 쓰세요.";
+    } else if (folderState === "none") {
+      $("folderBody").textContent = "폴더를 한 번 고르면 저장할 때마다 페이지마다 파일 하나씩 그 폴더에도 씁니다. 브라우저 기록을 지워도 남고, OneDrive·구글 드라이브 같은 동기화 폴더에 두면 다른 PC 에서도 같은 표시가 열립니다."
+        + (IN_POPUP ? " 이 작은 창에서는 크롬이 폴더 창을 열지 않아서, 누르면 새 탭에서 고릅니다." : "");
+      btns.push(folderAction("폴더 고르기", true, pickFolder));
+    } else {
+      const label = dirName ? `「${dirName}」` : "고른";
+      $("folderBody").replaceChildren(el("span", { class: folderState === "granted" ? "ok" : "err" },
+        folderState === "granted" ? `${label} 폴더에도 저장하고 있습니다.` : `${label} 폴더를 쓰려면 다시 허용해야 합니다(브라우저를 새로 열면 다시 묻습니다).`));
+      if (folderState !== "granted") btns.push(folderAction("폴더 다시 허용", true, async () => { await folder(true); await syncFolder(); folderChanged(); render(); }));
+      btns.push(folderAction("다른 폴더로 바꾸기", false, pickFolder));
+      btns.push(el("button", { onclick: async () => { await delMeta("dir"); folderChanged(); render(); } }, "연결 끊기"));
+    }
+    $("folderBtns").replaceChildren(...btns);
+  }
+  // 작은 저장 창에서는 폴더 일을 새 탭으로 넘기는 링크, 일반 탭에서는 바로 하는 버튼
+  function folderAction(label, primary, run) {
+    if (!IN_POPUP) return el("button", { class: primary ? "primary" : "", onclick: run }, label);
+    return el("a", { class: primary ? "btnlink primary" : "btnlink", href: "store.html?folder=1", target: "_blank", rel: "noopener",
+      onclick: () => status("새 탭에서 폴더를 고르세요. 고르고 나면 이 창이 저절로 알아챕니다.") }, `${label} (새 탭에서)`);
+  }
+  function folderChanged() { try { bc?.postMessage({ type: "folder" }); } catch {} }
+  function renderList(pages) {
+    $("count").textContent = pages.length ? `${pages.length}개` : "";
+    $("list").replaceChildren(...(pages.length ? pages.map((p) => {
+      const url = httpUrl(p.url);
+      const c = counts(p.data);
+      let host = ""; try { host = new URL(p.key).host; } catch {}
+      return el("li", { class: current?.key === p.key ? "here" : "" },
+        el("div", { class: "grow" },
+          url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", title: url }, p.title || url) : el("span", { class: "title" }, p.title || p.key),
+          el("div", { class: "muted" }, `${host} · ${fmt(p.savedAt)} · 표시 ${c.marks} · 설명 ${c.boxes}`)),
+        el("button", { title: "파일로 내려받기", onclick: () => download(p) }, "⤓"),
+        el("button", { title: "지우기", onclick: async () => {
+          if (!confirm(`「${p.title || p.key}」 에 저장한 표시를 지울까요?`)) return;
+          await delPage(p.key);
+          const dir = await folder();
+          if (dir) await removeFile(dir, p.key);
+          render();
+        } }, "✕"));
+    }) : [el("li", { class: "muted" }, "아직 없습니다.")]));
+  }
+
+  // 버튼을 누른 결과는 무엇이든 창 위쪽에 글로 남긴다(전에는 취소·실패가 조용히 지나가 눌러도 반응이 없는 것처럼 보였다)
+  function status(text, err = false) { $("status").className = err ? "muted err" : "muted ok"; $("status").textContent = text; }
+  async function pickFolder() {
+    if (!canFolder) { status("이 브라우저는 폴더에 직접 쓰는 기능이 없습니다(크롬·엣지에서 됩니다).", true); return; }
+    status("폴더 고르는 창을 여는 중… (안 보이면 다른 창 뒤에 열렸을 수 있습니다)");
+    try {
+      const dir = await window.showDirectoryPicker({ id: "notelayer", mode: "readwrite" });
+      await putMeta("dir", dir);
+      await folder(true);
+      await syncFolder();
+      status(folderState === "granted"
+        ? `${dir.name ? `「${dir.name}」` : "고른"} 폴더를 연결했습니다. 이제 저장할 때마다 이 폴더에도 파일로 씁니다.${FOLDER_TAB ? " 이 탭은 닫아도 됩니다." : ""}`
+        : `${dir.name ? `「${dir.name}」` : "고른"} 폴더에 쓰기 허락을 받지 못했습니다. 「폴더 다시 허용」을 눌러 주세요.`, folderState !== "granted");
+      folderChanged();
+    } catch (err) {
+      status(err?.name === "AbortError"
+        // 크롬은 바탕 화면·다운로드·사용자 폴더 자체·드라이브 맨 위처럼 시스템과 겹치는 폴더를 막고, 그런 폴더를 고르면 취소로 돌려준다
+        ? "폴더 고르기가 취소됐습니다. 바탕 화면·다운로드처럼 크롬이 통째로 막는 폴더를 골랐다면, 그 안의 폴더(예: 문서\\notelayer)를 고르세요."
+        : `폴더를 연결하지 못했습니다: ${err?.name || ""} ${err?.message || err}`, true);
+    }
+    render();
+  }
+  // 폴더를 처음 연결하거나 다시 허용하면, 이 브라우저에만 있던 기록을 폴더에도 써 둔다
+  async function syncFolder() {
+    const dir = await folder();
+    if (!dir) return;
+    for (const rec of await allPages()) {
+      const f = await readFile(dir, rec.key);
+      if (!f || (f.savedAt || 0) < rec.savedAt) await writeFile(dir, rec).catch(() => {});
+    }
+  }
+
+  $("importBtn").onclick = () => {
+    status("파일 고르는 창을 여는 중… (안 보이면 다른 창 뒤에 열렸을 수 있습니다)");
+    try { $("importFile").click(); } catch (err) { status(`파일 고르는 창을 열지 못했습니다: ${err?.message || err}`, true); }
+  };
+  $("importFile").oncancel = () => status("파일 고르기가 취소됐습니다.");
+  $("importFile").onchange = async (e) => {
+    let n = 0;
+    for (const f of e.target.files) {
+      try {
+        const rec = JSON.parse(await f.text());
+        if (typeof rec?.key !== "string" || !httpUrl(rec.key) || typeof rec.data !== "object") continue;
+        const old = await getPage(rec.key);
+        if (!old || (old.savedAt || 0) <= (rec.savedAt || 0)) { await putPage({ ...rec, data: clean(rec.data), savedAt: Number(rec.savedAt) || Date.now() }); n++; }
+      } catch {}
+    }
+    const total = e.target.files.length;
+    e.target.value = "";
+    status(`파일 ${total}개 중 ${n}개 페이지의 표시를 불러왔습니다${n < total ? "(notelayer 저장 파일이 아니거나 더 새 기록이 이미 있는 것은 건너뛰었습니다)" : ""}.`, n === 0);
+    render();
+  };
+
+  // 원래 페이지가 닫혔는지 가끔 확인한다
+  // 다른 탭에서 폴더를 고르거나 끊으면 다시 그린다(알림 통로가 없는 브라우저는 창으로 돌아올 때)
+  const refreshFolder = async () => { drawn.folder = null; await syncFolder().catch(() => {}); render(); };
+  bc?.addEventListener("message", (e) => { if (e.data?.type === "folder") refreshFolder(); });
+  window.addEventListener("focus", () => { drawn.folder = null; render(); });
+  if (FOLDER_TAB) status("이 탭에서 폴더를 고르세요. 문서 안의 notelayer 폴더처럼 직접 만든 폴더를 고르면 됩니다.");
+
+  let closedShown = false;
+  setInterval(() => { if (current && !closedShown && window.opener?.closed) { closedShown = true; render(); } }, 3000);
+  render();
+})();

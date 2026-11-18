@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>notelayer 저장 창</title>
+<style>
+  :root { --ink: #1f2328; --muted: #6b7280; --line: #e5e7eb; --accent: #0f766e; --warn: #b42318; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f6f7f9; color: var(--ink); font: 13px/1.6 "Pretendard", "IBM Plex Sans KR", "Malgun Gothic", sans-serif; }
+  header { padding: 12px 14px; background: #fff; border-bottom: 1px solid var(--line); }
+  header b { font-size: 14px; }
+  header p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+  main { padding: 10px 14px 20px; }
+  section { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 10px 0; }
+  h2 { font-size: 12px; margin: 0 0 6px; color: #374151; }
+  .muted { color: var(--muted); font-size: 12px; margin: 4px 0; }
+  .ok { color: var(--accent); }
+  .err { color: var(--warn); }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  button { font: inherit; cursor: pointer; border: 1px solid #d0d7de; background: #f6f8fa; border-radius: 8px; padding: 4px 10px; }
+  button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  a.btnlink { display: inline-block; font: inherit; border: 1px solid #d0d7de; background: #f6f8fa; border-radius: 8px; padding: 4px 10px; color: var(--ink); text-decoration: none; }
+  a.btnlink.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { display: flex; gap: 8px; align-items: flex-start; padding: 7px 0; border-top: 1px solid #f1f2f4; }
+  li:first-child { border-top: 0; }
+  li .grow { flex: 1; min-width: 0; }
+  li a, li .title { display: block; color: var(--ink); font-weight: 600; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  li a:hover { text-decoration: underline; }
+  li.here { background: #f0fdfa; margin: 0 -12px; padding: 7px 12px; }
+  li button { border: 0; background: none; color: var(--muted); padding: 0 4px; }
+  #cur .title { font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <b>notelayer 저장 창</b>
+  <p>웹페이지 위에 단 표시·설명을 이 PC 에 저장합니다. 서버로 보내지 않고, 다른 사이트는 이 메모를 꺼내 가지 못합니다(표시는 그 페이지 위에 그려지므로 그 사이트 자신은 볼 수 있습니다). 저장하려면 이 창을 열어 두세요.</p>
+</header>
+<main>
+  <p id="status" class="muted" role="status"></p>
+  <section id="cur">
+    <h2>지금 페이지</h2>
+    <div id="curBody" class="muted">표시 층과 연결을 기다리는 중…</div>
+  </section>
+  <section>
+    <h2>내 PC 폴더에 파일로도 저장</h2>
+    <div id="folderBody" class="muted"></div>
+    <div class="row" id="folderBtns"></div>
+  </section>
+  <section>
+    <h2>저장한 페이지 <span id="count" class="muted"></span></h2>
+    <ul id="list"></ul>
+    <div class="row">
+      <button type="button" id="importBtn">파일 불러오기</button>
+      <input type="file" id="importFile" accept=".json,application/json" multiple hidden>
+    </div>
+  </section>
+</main>
+<script src="store.js"></script>
+</body>
+</html>
