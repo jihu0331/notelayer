@@ -474,7 +474,9 @@
     .sheet .muted { color: #6b7280; font-size: 12px; }
     .sheet-close { border: 0; background: none; font-size: 16px; cursor: pointer; color: #6b7280; padding: 2px 8px; border-radius: 6px; }
     .sheet-close:hover { background: #f3f4f6; color: #111827; }
-    .sheet-main { flex: 1; display: flex; min-height: 0; }
+    .sheet-main { flex: 1; display: flex; min-height: 0; position: relative; }
+    .sheet-btn { border: 1px solid #d0d7de; background: #f6f8fa; border-radius: 8px; padding: 3px 10px; cursor: pointer; font: inherit; font-size: 12px; color: #1f2328; }
+    .sheet-btn:hover { background: #eef1f4; }
     .sheet-body { flex: 1; overflow: auto; padding: 28px 32px 40px; }
     .td-tree { position: relative; margin: 0 auto; }
     .td-lines { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
@@ -491,14 +493,18 @@
     .td-rel { position: absolute; transform: translate(-50%, -50%); background: #f8fafc; color: #4b5563; font-size: 11px; padding: 0 5px; border-radius: 4px; white-space: nowrap; }
     .td-lab { position: absolute; transform: translate(-50%, -50%); background: #eef2ff; color: #4338ca; font-size: 11px; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
     .td-sub { position: absolute; left: 0; color: #6b7280; font-size: 12px; }
-    .sheet-detail { width: 320px; flex: none; border-left: 1px solid #e5e7eb; background: #fff; padding: 18px 20px; overflow: auto; }
+    .sheet-detail { position: absolute; right: 16px; bottom: 16px; width: min(340px, calc(100% - 32px)); max-height: calc(100% - 32px); overflow: auto;
+      background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px 18px; box-shadow: 0 10px 30px rgba(0,0,0,.18); }
+    .sheet-detail[hidden] { display: none; }
+    .detail-close { float: right; border: 0; background: none; color: #6b7280; cursor: pointer; font-size: 14px; padding: 0 2px 4px 8px; }
+    .detail-close:hover { color: #111827; }
     .sheet-detail h3 { margin: 0 0 2px; font-size: 16px; }
     .sheet-detail .role { color: #6b7280; font-size: 12px; }
     .sheet-detail .gloss { margin: 8px 0; color: #374151; }
     .sheet-detail ul { margin: 8px 0 12px; padding-left: 18px; }
     .sheet-detail li { margin: 3px 0; }
     .sheet-detail .go { border: 1px solid #d0d7de; background: #f6f8fa; border-radius: 8px; padding: 4px 10px; cursor: pointer; font: inherit; }
-    @media (max-width: 760px) { .sheet-main { flex-direction: column; } .sheet-detail { width: auto; border-left: 0; border-top: 1px solid #e5e7eb; max-height: 42vh; } }
+
     /* 다크 테마(품는 화면이 notelayer-overlay 에 data-theme="dark" 를 단다) */
     :host([data-theme="dark"]) .mini { background: #1f232a; color: #e5e7eb; border-color: #343a43; box-shadow: 0 4px 16px rgba(0,0,0,.5); }
     :host([data-theme="dark"]) .mini-items { color: #d1d5db; }
@@ -519,7 +525,9 @@
     :host([data-theme="dark"]) .td-edge { stroke: #4b5563; }
     :host([data-theme="dark"]) .td-rel { background: #14161a; color: #9ca3af; }
     :host([data-theme="dark"]) .td-lab { background: #262a4a; color: #c7d2fe; }
-    :host([data-theme="dark"]) .sheet-detail .go { background: #2a2f37; border-color: #3d434d; color: #e5e7eb; }
+    :host([data-theme="dark"]) .sheet-detail .go, :host([data-theme="dark"]) .sheet-btn { background: #2a2f37; border-color: #3d434d; color: #e5e7eb; }
+    :host([data-theme="dark"]) .sheet-detail { box-shadow: 0 10px 30px rgba(0,0,0,.6); }
+    :host([data-theme="dark"]) .detail-close:hover { color: #fff; }
     .mk { display: inline-block; vertical-align: middle; margin-right: 4px; }
     .mk-key { color: var(--circle); font-weight: 700; text-decoration: underline solid var(--circle); text-decoration-thickness: 2px; text-underline-offset: 2px; }
     .mk-hl { width: 12px; height: 9px; background: var(--hl); }
@@ -828,7 +836,7 @@
     pill.hidden = !min;
     renderMini();
   }
-  const saveUi = () => store.set(UI_KEY, { side: state.side, width: state.width, boxMode: INLINE_ONLY ? ui.boxMode : state.boxMode });
+  const saveUi = () => store.set(UI_KEY, { side: state.side, width: state.width, boxMode: INLINE_ONLY ? ui.boxMode : state.boxMode, hideGloss: ui.hideGloss });
 
   // 본문 양옆 빈자리 중 넓은 쪽에, 그 폭에 맞춰 둔다. 자리가 모자라면 기본 폭으로 겹쳐 두고 별도 창을 권한다
   function autoPlace() {
@@ -1181,14 +1189,24 @@
     const c = state.concepts;
     if (!c?.nodes?.length) return;
     closeSummary();
-    const detail = h("div", { class: "sheet-detail" }, h("p", { class: "muted" }, "개념을 누르면 핵심 내용이 여기에 나옵니다."));
-    const tree = h("div", { class: "td-tree" });
+    // 상세 칸은 개념을 눌렀을 때만 오른쪽 아래에 뜬다(늘 붙어 있으면 구조도를 가렸다)
+    const detail = h("div", { class: "sheet-detail", hidden: true });
+    const body = h("div", { class: "sheet-body" });
+    const glossBtn = h("button", { class: "sheet-btn", title: "개념 상자 안의 한 줄 풀이를 모두 켜고 끕니다" });
+    const draw = () => {
+      glossBtn.textContent = ui.hideGloss ? "풀이 보이기" : "풀이 숨기기";
+      glossBtn.setAttribute("aria-pressed", String(!ui.hideGloss));
+      const tree = h("div", { class: "td-tree" });
+      body.replaceChildren(tree);
+      layoutTopDown(tree, c, detail);
+    };
+    glossBtn.onclick = () => { ui.hideGloss = !ui.hideGloss; store.set(UI_KEY, { ...(store.get(UI_KEY) || {}), hideGloss: ui.hideGloss }); detail.hidden = true; draw(); };
     sheet = h("div", { class: "sheet", role: "dialog", "aria-label": "요약" },
       h("div", { class: "sheet-head" }, h("b", {}, "요약"), h("span", { class: "sheet-topic" }, c.topic), h("span", { class: "grow" }),
-        h("span", { class: "muted" }, "Esc 로 닫기"), h("button", { class: "sheet-close", title: "닫기", onclick: closeSummary }, "✕")),
-      h("div", { class: "sheet-main" }, h("div", { class: "sheet-body" }, tree), detail));
+        glossBtn, h("span", { class: "muted" }, "Esc 로 닫기"), h("button", { class: "sheet-close", title: "닫기", onclick: closeSummary }, "✕")),
+      h("div", { class: "sheet-main" }, body, detail));
     shadow.append(sheet);
-    layoutTopDown(tree, c, detail);
+    draw();
   }
   function layoutTopDown(tree, c, detail) {
     const NW = 184, HG = 24, VG = 86, SUB = 30;
@@ -1201,9 +1219,11 @@
     const els = new Map();
     const select = (n) => {
       for (const e of els.values()) e.classList.toggle("sel", e === els.get(n.id));
+      detail.hidden = false;
       const pts = (Array.isArray(n.points) ? n.points : []).filter((x) => typeof x === "string" && x.trim());
       const up = n.parent && byId.get(n.parent);
       detail.replaceChildren(...[
+        h("button", { class: "detail-close", title: "닫기", onclick: () => { detail.hidden = true; for (const e of els.values()) e.classList.remove("sel"); } }, "✕"),
         h("h3", {}, n.term),
         h("div", { class: "role" }, [n.role, up ? `${up.term} 의 ${relName(n) || "하위 개념"}` : null].filter(Boolean).join(" · ")),
         n.gloss ? h("div", { class: "gloss" }, n.gloss) : null,
@@ -1213,7 +1233,7 @@
     };
     const card = (n, extra = "") => {
       const e = h("div", { class: `td-node${extra}`, "data-id": n.id, style: `width:${NW}px`, onclick: () => select(n) },
-        h("div", { class: "td-term" }, n.term), n.gloss ? h("div", { class: "td-gloss" }, n.gloss) : null);
+        h("div", { class: "td-term" }, n.term), n.gloss && !ui.hideGloss ? h("div", { class: "td-gloss" }, n.gloss) : null);
       els.set(n.id, e); tree.append(e);
       return e;
     };

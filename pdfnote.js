@@ -297,9 +297,8 @@
     const pagesEl = $("pages");
     const first = await pdf.getPage(1);
     const w1 = first.getViewport({ scale: 1 }).width;
-    // 오른쪽 위 작은 창(약 330px) 자리를 남기고 폭을 정한다. 창 크기를 바꿔도 다시 그리지 않는다(표시 자리가 그대로 맞게)
-    const avail = Math.max(480, Math.min(1000, innerWidth - 24 - 350));
-    const scale = (innerWidth < 860 ? Math.max(320, innerWidth - 40) : avail) / w1;
+    // 화면 폭을 다 쓴다(오른쪽 위 작은 창은 PDF 위에 떠 있다). 창 크기를 바꿔도 다시 그리지 않는다(표시 자리가 그대로 맞게)
+    const scale = Math.max(320, Math.min(1000, innerWidth - 48)) / w1;
     const paragraphs = [];
     const pages = [];
     for (let n = 1; n <= pdf.numPages; n++) {
