@@ -499,6 +499,14 @@
     .mini .act:hover:not(:disabled) { background: #eef1f4; }
     .mini .act:disabled { opacity: .45; cursor: default; }
     .mini .act.sw.on { background: #fff7ed; border-color: #f59e0b; color: #b45309; font-weight: 600; }
+    @media (pointer: coarse) {
+      .mini { font-size: 13px; padding: 9px 12px; }
+      .mini .act { padding: 6px 12px; }
+      .mini .it button { padding: 4px 6px; }
+      .pop button { padding: 8px 12px; }
+      .sheet-btn, .sheet-close { padding: 6px 12px; }
+      .sheet .hint { display: none; }
+    }
     /* 요약 크게 보기: 페이지 전체를 덮고 위에서 아래로 내려가는 구조도 */
     .sheet { position: fixed; inset: 0; z-index: 10; pointer-events: auto; display: flex; flex-direction: column; background: #f8fafc;
       color: #1f2328; font: 13px/1.55 "Pretendard Variable", "Pretendard", "IBM Plex Sans KR", "Malgun Gothic", sans-serif; }
@@ -512,7 +520,7 @@
     .sheet-main { flex: 1; display: flex; min-height: 0; position: relative; }
     .sheet-btn { border: 1px solid #d0d7de; background: #f6f8fa; border-radius: 8px; padding: 3px 10px; cursor: pointer; font: inherit; font-size: 12px; color: #1f2328; }
     .sheet-btn:hover { background: #eef1f4; }
-    .sheet-body { flex: 1; overflow: hidden; position: relative; }
+    .sheet-body { flex: 1; overflow: hidden; position: relative; touch-action: none; }
     .td-tree { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
     .sheet .zoom { display: inline-flex; gap: 2px; align-items: center; }
     .sheet .zoom .sheet-btn { padding: 3px 8px; }
@@ -685,6 +693,8 @@
     .lab-sel { font: 700 12px "Pretendard Variable", "Pretendard", "Malgun Gothic", sans-serif; color: var(--c); border: 1px solid var(--nl-line, #e5e7eb); border-radius: 6px; background: var(--nl-focus, #fff); padding: 1px 4px; }
     .del { border: 0; background: none; color: #9ca3af; cursor: pointer; font-size: 12px; padding: 0 4px; }
     .del:hover { color: #b42318; }
+    @media (hover: none) { .edit { visibility: visible; } }
+    @media (pointer: coarse) { .edit, .del { padding: 4px 8px; font-size: 13px; } }
   `;
   const inlineHosts = [];
   const inlineEls = new Map(); // 설명 id → 본문 속 카드(수정 중이면 글 칸). 새 설명을 달면 여기로 커서를 옮긴다
@@ -1315,18 +1325,53 @@
       zoomAt(view.z * Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top);
     }, { passive: false });
     body.addEventListener("contextmenu", (e) => e.preventDefault());
+    // 끌어 옮기기·두 손가락 확대. 마우스는 오른쪽 버튼(어디서나) 또는 왼쪽 버튼(빈 곳), 손가락·펜은 어디서나.
+    // 거의 움직이지 않고 뗀 손가락은 「누르기」 로 남겨 개념 상자를 열 수 있게 한다
+    const touches = new Map();
+    let gesture = null; // { kind: "pan"|"pinch", ... }
+    const local = (e) => { const r = body.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+    const startPinch = () => {
+      const [a, b] = [...touches.values()];
+      gesture = { kind: "pinch", d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, z0: view.z, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, vx: view.x, vy: view.y };
+    };
     body.addEventListener("pointerdown", (e) => {
-      if (e.button !== 2) return;
-      e.preventDefault();
-      const x0 = e.clientX - view.x, y0 = e.clientY - view.y;
-      body.setPointerCapture(e.pointerId);
-      body.classList.add("panning");
-      const move = (ev) => { view.x = ev.clientX - x0; view.y = ev.clientY - y0; apply(); };
-      const up = () => { body.removeEventListener("pointermove", move); body.removeEventListener("pointerup", up); body.removeEventListener("pointercancel", up); body.classList.remove("panning"); };
-      body.addEventListener("pointermove", move);
-      body.addEventListener("pointerup", up);
-      body.addEventListener("pointercancel", up);
+      const mouse = e.pointerType === "mouse";
+      if (mouse && !(e.button === 2 || (e.button === 0 && !e.target.closest?.(".td-node, .td-lab")))) return;
+      if (mouse && e.button === 2) e.preventDefault();
+      touches.set(e.pointerId, local(e));
+      // 붙잡기(pointer capture)는 실제로 끌기 시작한 다음에 한다. 대자마자 붙잡으면 개념 상자를 톡 눌러도 상자에 전달되지 않는다
+      if (touches.size === 2) { for (const id of touches.keys()) try { body.setPointerCapture(id); } catch {} startPinch(); }
+      else if (touches.size === 1) gesture = { kind: "pan", sx: local(e).x, sy: local(e).y, vx: view.x, vy: view.y, moved: false };
     });
+    body.addEventListener("pointermove", (e) => {
+      if (!touches.has(e.pointerId) || !gesture) return;
+      touches.set(e.pointerId, local(e));
+      if (gesture.kind === "pinch" && touches.size >= 2) {
+        const [a, b] = [...touches.values()];
+        const z2 = clamp(gesture.z0 * (Math.hypot(a.x - b.x, a.y - b.y) / gesture.d0), 0.3, 2.5);
+        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        // 처음 두 손가락 가운데 있던 지점이 지금 가운데로 오게
+        view.x = mx - (gesture.mx - gesture.vx) * (z2 / gesture.z0);
+        view.y = my - (gesture.my - gesture.vy) * (z2 / gesture.z0);
+        view.z = z2;
+        apply();
+      } else if (gesture.kind === "pan") {
+        const p = touches.get(e.pointerId), dx = p.x - gesture.sx, dy = p.y - gesture.sy;
+        if (!gesture.moved && Math.hypot(dx, dy) < 5) return;
+        if (!gesture.moved) try { body.setPointerCapture(e.pointerId); } catch {}
+        gesture.moved = true;
+        body.classList.add("panning");
+        view.x = gesture.vx + dx; view.y = gesture.vy + dy;
+        apply();
+      }
+    });
+    const lift = (e) => {
+      if (!touches.delete(e.pointerId)) return;
+      if (touches.size === 1) { const [p] = [...touches.values()]; gesture = { kind: "pan", sx: p.x, sy: p.y, vx: view.x, vy: view.y, moved: true }; }
+      else if (touches.size === 0) { gesture = null; body.classList.remove("panning"); }
+    };
+    body.addEventListener("pointerup", lift);
+    body.addEventListener("pointercancel", lift);
     sheet = h("div", { class: "sheet", role: "dialog", "aria-label": "요약" },
       h("div", { class: "sheet-head" }, h("b", {}, "요약"), h("span", { class: "sheet-topic" }, c.topic), h("span", { class: "grow" }),
         pointsBtn,
@@ -1334,7 +1379,7 @@
           h("button", { class: "sheet-btn", title: "축소", onclick: () => zoomCenter(1 / 1.2) }, "－"), zoomLabel,
           h("button", { class: "sheet-btn", title: "확대", onclick: () => zoomCenter(1.2) }, "＋"),
           h("button", { class: "sheet-btn", title: "구조도 전체가 화면에 들어오게", onclick: fit }, "화면 맞춤")),
-        h("span", { class: "muted" }, "휠로 확대·축소 · 오른쪽 버튼으로 끌어 이동 · Esc 로 닫기"), h("button", { class: "sheet-close", title: "닫기", onclick: closeSummary }, "✕")),
+        h("span", { class: "muted hint" }, "휠·두 손가락으로 확대·축소 · 끌어서 이동 · Esc 로 닫기"), h("button", { class: "sheet-close", title: "닫기", onclick: closeSummary }, "✕")),
       h("div", { class: "sheet-main" }, body, detail));
     shadow.append(sheet);
     draw();
@@ -1573,6 +1618,24 @@
   }
   // 본문 속 카드 안을 누르거나 글자를 고를 때는 표시 도구를 띄우지 않는다
   const inNote = (e) => e.composedPath().some((n) => n.tagName === "NOTELAYER-NOTE");
+  // 손가락·펜으로 고를 때(아이패드): 선택이 바뀐 뒤 0.4초 동안 그대로면 도구를 띄운다. 마우스로 고를 때는 mouseup 이 맡는다
+  let lastPointer = "mouse", selT = 0;
+  function onPointerKind(e) { lastPointer = e.pointerType || "mouse"; }
+  function onSelChange() {
+    if (lastPointer === "mouse") return;
+    clearTimeout(selT);
+    selT = setTimeout(() => {
+      const sel = getSelection();
+      if (!sel?.rangeCount || sel.isCollapsed) return;
+      const r = sel.getRangeAt(0);
+      if (!state.root.contains(r.commonAncestorContainer) || squash(r.toString()).length < 2) return;
+      if (state.attaching) { attach(r.cloneRange()); return; }
+      if (state.editing) { showSelectionTools(r.cloneRange()); return; }
+      if (!COMPACT) return;
+      const rr = r.getBoundingClientRect(), range = r.cloneRange();
+      showPop(rr.left + rr.width / 2, rr.bottom + 10, [h("button", { title: "이 부분을 AI 에게 더 자세히(예시 포함) 묻는 요청문을 복사합니다", onclick: () => deepAsk(range) }, "🔎 자세히 묻기")]);
+    }, 400);
+  }
   function onMouseUp(e) {
     if (e.composedPath().includes(host) || inNote(e)) return;
     if (!state.editing && !state.attaching) {
@@ -1742,6 +1805,8 @@
     removeEventListener("resize", onResize);
     removeEventListener("pagehide", onPageHide);
     document.removeEventListener("mouseup", onMouseUp, true);
+    document.removeEventListener("pointerdown", onPointerKind, true);
+    document.removeEventListener("selectionchange", onSelChange);
     document.removeEventListener("click", onClick, true);
     document.removeEventListener("keydown", onKey, true);
     ro.disconnect(); mapObserver?.disconnect();
@@ -1769,6 +1834,8 @@
   addEventListener("pagehide", onPageHide);
   document.addEventListener("mouseup", onMouseUp, true);
   document.addEventListener("click", onClick, true);
+  document.addEventListener("pointerdown", onPointerKind, true);
+  document.addEventListener("selectionchange", onSelChange);
   document.addEventListener("keydown", onKey, true);
   const ro = new ResizeObserver(queueDraw);
   ro.observe(document.body);
