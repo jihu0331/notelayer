@@ -3,10 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- PDF 쪽은 하얀 그림이라, 브라우저 강제 다크 모드·다크 모드 확장이 나머지만 어둡게 바꾸면 쪽 사이 설명 자리가 검은 띠가 된다. 종이처럼 밝게 둔다 -->
+<meta name="color-scheme" content="only light">
+<meta name="darkreader-lock">
 <title>notelayer PDF 노트</title>
 <meta name="description" content="PDF 원본을 이 PC 에 보관하고, 원래 모양 그대로 펼쳐 그 위에 표시·설명·메모를 남긴다">
 <style>
-  :root { --ink: #1f2328; --muted: #6b7280; --line: #e5e7eb; --accent: #0f766e; --warn: #b42318; --bg: #eef0f3; }
+  :root { color-scheme: only light; --ink: #1f2328; --muted: #6b7280; --line: #e5e7eb; --accent: #0f766e; --warn: #b42318; --bg: #eef0f3; }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.6 "Pretendard", "IBM Plex Sans KR", "Malgun Gothic", sans-serif; }
   button { font: inherit; cursor: pointer; border: 1px solid #d0d7de; background: #f6f8fa; border-radius: 8px; padding: 5px 12px; color: var(--ink); }

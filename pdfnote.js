@@ -347,11 +347,15 @@
       return { para, hd, cut: cutFor(rec, para) };
     }).sort((a, b) => a.cut - b.cut || a.para.top - b.para.top);
     // 끼울 자리마다 높이를 재서 쌓는다. 같은 줄에서 자르는 문단이 여럿이면 차례로 쌓는다
+    // 카드 폭은 그 쪽 본문 폭으로 맞춘다(문단 길이마다 폭이 달라 들쭉날쭉했다). 두 단 문서의 한쪽 단처럼 본문 폭의 절반 남짓인 문단만 그 단 폭을 따른다
+    const body = rec.paras.filter((q) => !q.tiny);
+    const bl = Math.min(...body.map((q) => q.left)), br = Math.max(...body.map((q) => q.right));
     let off = 0;
     const shifts = []; // { y, off }: y 아래는 off 만큼 민다
     for (const it of items) {
-      const w = Math.max(it.para.right - it.para.left, Math.min(rec.W - it.para.left - 12, 420));
-      Object.assign(it.hd.style, { top: `${it.cut + off}px`, left: `${it.para.left}px`, width: `${Math.min(w, rec.W - it.para.left - 6)}px` });
+      const narrow = it.para.right - it.para.left < (br - bl) * 0.55 && (it.para.left > bl + (br - bl) * 0.3 || it.para.right < br - (br - bl) * 0.3);
+      const [l, r] = narrow ? [it.para.left, Math.max(it.para.right, Math.min(rec.W - 8, it.para.left + 360))] : [bl, br];
+      Object.assign(it.hd.style, { top: `${it.cut + off}px`, left: `${l}px`, width: `${Math.min(r, rec.W - 6) - l}px` });
       off += it.hd.offsetHeight;
       const last = shifts[shifts.length - 1];
       if (last && last.y === it.cut) last.off = off; else shifts.push({ y: it.cut, off });

@@ -599,7 +599,7 @@
     .grow { flex: 1; }
     .edit { border: 0; background: none; color: #9ca3af; cursor: pointer; font-size: 12px; padding: 0 4px; visibility: hidden; }
     .card:hover .edit { visibility: visible; }
-    pre { margin: 6px 0 0; padding: 6px 8px; background: #eef2f6; border-radius: 6px; font: 12.5px/1.5 Consolas, "D2Coding", monospace; white-space: pre; overflow-x: auto; }
+    pre { margin: 6px 0 0; padding: 6px 8px; background: #eef2f6; border-radius: 6px; font: 12.5px/1.5 "D2Coding", "NanumGothicCoding", Consolas, monospace; white-space: pre; overflow-x: auto; }
     details { margin-top: 6px; }
     summary { cursor: pointer; color: #9c36b5; font-size: 13px; }
     .tr { border-left: 3px solid #94a3b8; border-radius: 8px; background: #f8fafc; color: #334155; padding: 6px 12px; margin: 6px 0;
