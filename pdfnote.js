@@ -8,6 +8,8 @@
 (() => {
   const S = window.NL_STORAGE;
   // 문서 넣기 화면(import.js)과 같은 판의 pdf.js 를 쓴다
+  // 이 판(3.11)은 조작된 글꼴이 든 PDF 를 열면 그 안의 코드가 실행되는 취약점(CVE-2024-4367)이 있다. 모든 getDocument 에
+  // isEvalSupported: false 를 넣어 막는다(공식 권고). 코드가 실행되면 이 주소에 저장한 다른 메모까지 읽힐 수 있다
   const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
   const PDFJS_WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
   const $ = (id) => document.getElementById(id);
@@ -65,7 +67,7 @@
     let pages = 0;
     try {
       const lib = await pdfjs();
-      const pdf = await lib.getDocument({ data: new Uint8Array(buf.slice(0)) }).promise; // 일꾼에게 넘기면 원본 버퍼가 비워지므로 사본을 준다
+      const pdf = await lib.getDocument({ data: new Uint8Array(buf.slice(0)), isEvalSupported: false }).promise; // 일꾼에게 넘기면 원본 버퍼가 비워지므로 사본을 준다
       pages = pdf.numPages;
       pdf.destroy();
     } catch (err) {
@@ -215,7 +217,7 @@
     let lib, pdf;
     try {
       lib = await pdfjs();
-      pdf = await lib.getDocument({ data: new Uint8Array(await rec.blob.arrayBuffer()) }).promise;
+      pdf = await lib.getDocument({ data: new Uint8Array(await rec.blob.arrayBuffer()), isEvalSupported: false }).promise;
     } catch (err) {
       loading(`PDF 를 열지 못했습니다: ${err?.message || err}`, true);
       return;
