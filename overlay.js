@@ -490,6 +490,10 @@
     .td-node.sel { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.2); }
     .td-term { font-weight: 700; font-size: 13.5px; }
     .td-gloss { color: #4b5563; font-size: 12px; margin-top: 2px; }
+    .td-points { margin: 6px 0 0; padding: 6px 0 0 16px; border-top: 1px dashed #e5e7eb; color: #374151; font-size: 12px; line-height: 1.5; }
+    .td-points li { margin: 2px 0; }
+    .sheet-body { cursor: default; }
+    .sheet-body.panning { cursor: grabbing; user-select: none; }
     .td-rel { position: absolute; transform: translate(-50%, -50%); background: #f8fafc; color: #4b5563; font-size: 11px; padding: 0 5px; border-radius: 4px; white-space: nowrap; }
     .td-lab { position: absolute; transform: translate(-50%, -50%); background: #eef2ff; color: #4338ca; font-size: 11px; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
     .td-sub { position: absolute; left: 0; color: #6b7280; font-size: 12px; }
@@ -522,6 +526,7 @@
     :host([data-theme="dark"]) .td-node { background: #1f232a; border-color: #343a43; box-shadow: none; }
     :host([data-theme="dark"]) .td-node.root { border-color: #e5e7eb; }
     :host([data-theme="dark"]) .td-gloss { color: #9ca3af; }
+    :host([data-theme="dark"]) .td-points { color: #d1d5db; border-top-color: #343a43; }
     :host([data-theme="dark"]) .td-edge { stroke: #4b5563; }
     :host([data-theme="dark"]) .td-rel { background: #14161a; color: #9ca3af; }
     :host([data-theme="dark"]) .td-lab { background: #262a4a; color: #c7d2fe; }
@@ -836,7 +841,7 @@
     pill.hidden = !min;
     renderMini();
   }
-  const saveUi = () => store.set(UI_KEY, { side: state.side, width: state.width, boxMode: INLINE_ONLY ? ui.boxMode : state.boxMode, hideGloss: ui.hideGloss });
+  const saveUi = () => store.set(UI_KEY, { side: state.side, width: state.width, boxMode: INLINE_ONLY ? ui.boxMode : state.boxMode, showPoints: ui.showPoints });
 
   // 본문 양옆 빈자리 중 넓은 쪽에, 그 폭에 맞춰 둔다. 자리가 모자라면 기본 폭으로 겹쳐 두고 별도 창을 권한다
   function autoPlace() {
@@ -1225,24 +1230,42 @@
     // 상세 칸은 개념을 눌렀을 때만 오른쪽 아래에 뜬다(늘 붙어 있으면 구조도를 가렸다)
     const detail = h("div", { class: "sheet-detail", hidden: true });
     const body = h("div", { class: "sheet-body" });
-    const glossBtn = h("button", { class: "sheet-btn", title: "개념 상자 안의 한 줄 풀이를 모두 켜고 끕니다" });
+    const pointsBtn = h("button", { class: "sheet-btn", title: "개념 상자마다 점(•)으로 적힌 핵심 내용을 모두 펼치고 접습니다" });
+    // 오른쪽 버튼을 누른 채 끌면 구조도 전체가 움직인다(옮긴 거리는 다시 그려도 유지)
+    let pan = { x: 0, y: 0 };
     const draw = () => {
-      glossBtn.textContent = ui.hideGloss ? "풀이 보이기" : "풀이 숨기기";
-      glossBtn.setAttribute("aria-pressed", String(!ui.hideGloss));
+      pointsBtn.textContent = ui.showPoints ? "핵심 내용 접기" : "핵심 내용 펼치기";
+      pointsBtn.setAttribute("aria-pressed", String(!!ui.showPoints));
       const tree = h("div", { class: "td-tree" });
       body.replaceChildren(tree);
       layoutTopDown(tree, c, detail);
+      movePan(tree);
     };
-    glossBtn.onclick = () => { ui.hideGloss = !ui.hideGloss; store.set(UI_KEY, { ...(store.get(UI_KEY) || {}), hideGloss: ui.hideGloss }); detail.hidden = true; draw(); };
+    const movePan = (tree) => { const z = Number(tree.style.zoom) || 1; tree.style.translate = `${pan.x / z}px ${pan.y / z}px`; };
+    pointsBtn.onclick = () => { ui.showPoints = !ui.showPoints; store.set(UI_KEY, { ...(store.get(UI_KEY) || {}), showPoints: ui.showPoints }); detail.hidden = true; draw(); };
+    body.addEventListener("contextmenu", (e) => e.preventDefault());
+    body.addEventListener("pointerdown", (e) => {
+      if (e.button !== 2) return;
+      e.preventDefault();
+      const tree = body.querySelector(".td-tree");
+      const x0 = e.clientX - pan.x, y0 = e.clientY - pan.y;
+      body.setPointerCapture(e.pointerId);
+      body.classList.add("panning");
+      const move = (ev) => { pan = { x: ev.clientX - x0, y: ev.clientY - y0 }; movePan(tree); };
+      const up = () => { body.removeEventListener("pointermove", move); body.removeEventListener("pointerup", up); body.removeEventListener("pointercancel", up); body.classList.remove("panning"); };
+      body.addEventListener("pointermove", move);
+      body.addEventListener("pointerup", up);
+      body.addEventListener("pointercancel", up);
+    });
     sheet = h("div", { class: "sheet", role: "dialog", "aria-label": "요약" },
       h("div", { class: "sheet-head" }, h("b", {}, "요약"), h("span", { class: "sheet-topic" }, c.topic), h("span", { class: "grow" }),
-        glossBtn, h("span", { class: "muted" }, "Esc 로 닫기"), h("button", { class: "sheet-close", title: "닫기", onclick: closeSummary }, "✕")),
+        pointsBtn, h("span", { class: "muted" }, "오른쪽 버튼으로 끌어 이동 · Esc 로 닫기"), h("button", { class: "sheet-close", title: "닫기", onclick: closeSummary }, "✕")),
       h("div", { class: "sheet-main" }, body, detail));
     shadow.append(sheet);
     draw();
   }
   function layoutTopDown(tree, c, detail) {
-    const NW = 184, HG = 24, VG = 86, SUB = 30;
+    const NW = ui.showPoints ? 236 : 184, HG = 24, VG = 86, SUB = 30;
     const byId = new Map(c.nodes.map((n) => [n.id, n]));
     const kids = new Map();
     for (const n of c.nodes) { if (!kids.has(n.parent)) kids.set(n.parent, []); kids.get(n.parent).push(n); }
@@ -1264,9 +1287,11 @@
         n.def?.quote ? h("button", { class: "go", onclick: () => { closeSummary(); showQuote(n.def); } }, "원문에서 보기 ↗") : null,
       ].filter(Boolean));
     };
+    const pts = (n) => (Array.isArray(n.points) ? n.points : []).filter((x) => typeof x === "string" && x.trim());
     const card = (n, extra = "") => {
       const e = h("div", { class: `td-node${extra}`, "data-id": n.id, style: `width:${NW}px`, onclick: () => select(n) },
-        h("div", { class: "td-term" }, n.term), n.gloss && !ui.hideGloss ? h("div", { class: "td-gloss" }, n.gloss) : null);
+        h("div", { class: "td-term" }, n.term), n.gloss ? h("div", { class: "td-gloss" }, n.gloss) : null,
+        ui.showPoints && pts(n).length ? h("ul", { class: "td-points" }, pts(n).map((x) => h("li", {}, x))) : null);
       els.set(n.id, e); tree.append(e);
       return e;
     };
@@ -1363,9 +1388,10 @@
       labelAt(lx, ly, l.label);
     }
     svg.setAttribute("height", String(height));
-    // 화면보다 넓으면 한눈에 들어오게 줄인다(너무 작아지면 읽기 어려우니 0.65배까지만, 나머지는 옆으로 밀어 본다)
+    // 화면보다 넓으면 한눈에 들어오게 줄인다(너무 작아지면 읽기 어려우니 하한을 둔다)
     const room = (tree.parentElement?.clientWidth || width) - 64;
-    if (width > room) tree.style.zoom = String(Math.max(0.65, room / width));
+    // 핵심 내용을 펼치면 글자가 많아 덜 줄이고, 넘치는 부분은 오른쪽 버튼으로 끌어 본다
+    if (width > room) tree.style.zoom = String(Math.max(ui.showPoints ? 0.88 : 0.65, room / width));
     Object.assign(tree.style, { width: `${width}px`, height: `${height}px` });
     svg.setAttribute("width", String(width));
   }
