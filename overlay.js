@@ -328,7 +328,7 @@
     for (const n of nodes) { const seen = new Set([n.id]); let p = n.parent; while (p) { if (seen.has(p)) { n.parent = null; break; } seen.add(p); p = nodes.find((x) => x.id === p)?.parent; } }
     const links = (Array.isArray(c.links) ? c.links : []).map((l) => ({ from: String(l?.from), to: String(l?.to), label: tidy(l?.label).slice(0, 24) }))
       .filter((l) => ids.has(l.from) && ids.has(l.to) && l.from !== l.to && l.label);
-    return nodes.length ? { topic: tidy(c.topic) || document.title, nodes, links } : null;
+    return nodes.length ? { topic: tidy(c.topic) || document.title, nodes, links, ...(c.mine ? { mine: true } : {}) } : null;
   }
 
   // ── 저장: 고친 결과까지 페이지 주소별로 남긴다. p 는 이 페이지 문단 번호라 다시 열면 그대로 맞는다 ──
@@ -608,7 +608,7 @@
     .sheet-body.panning { cursor: grabbing; user-select: none; }
     .td-rel { position: absolute; transform: translate(-50%, -50%); background: #f8fafc; color: #4b5563; font-size: 11px; padding: 0 5px; border-radius: 4px; white-space: nowrap; }
     .td-lab { position: absolute; transform: translate(-50%, -50%); background: #eef2ff; color: #4338ca; font-size: 11px; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
-    .td-sub { position: absolute; left: 0; color: #6b7280; font-size: 12px; }
+    .td-sub { position: absolute; left: 0; color: #6b7280; font-size: 12px; white-space: nowrap; }
     .sheet-detail { position: absolute; right: 16px; bottom: 16px; width: min(340px, calc(100% - 32px)); max-height: calc(100% - 32px); overflow: auto;
       background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px 18px; box-shadow: 0 10px 30px rgba(0,0,0,.18); }
     .sheet-detail[hidden] { display: none; }
@@ -656,10 +656,49 @@
     .pop button:hover { background: rgba(255,255,255,.15); }
     .pop button[aria-pressed="true"] { background: rgba(255,255,255,.28); }
     .pop .sep { width: 1px; background: rgba(255,255,255,.2); margin: 2px 2px; }
+    /* 수정 모드: 설명 옮기기(놓을 자리 줄·끌리는 꼬리표), 표시 범위 손잡이 */
+    .drop-line { position: fixed; height: 3px; border-radius: 2px; background: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,.25); pointer-events: none; z-index: 9; }
+    .drag-ghost { position: fixed; max-width: 240px; padding: 5px 10px; border-radius: 8px; background: #1f2328; color: #fff; pointer-events: none; z-index: 9;
+      font: 12px/1.4 "Pretendard Variable", "Pretendard", "Malgun Gothic", sans-serif; box-shadow: 0 6px 18px rgba(0,0,0,.3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .knob { position: fixed; width: 22px; pointer-events: none; z-index: 6; }
+    .knob::before { content: ""; position: absolute; left: 10px; width: 2px; top: 0; bottom: 0; background: #6366f1; }
+    .knob.start::before { top: 10px; }
+    .knob.end::before { bottom: 10px; }
+    .knob i { position: absolute; left: 5px; width: 12px; height: 12px; border-radius: 50%; background: #6366f1; box-shadow: 0 0 0 2px #fff;
+      pointer-events: auto; cursor: ew-resize; touch-action: none; user-select: none; -webkit-user-select: none; }
+    .knob.start i { top: 0; }
+    .knob.end i { bottom: 0; }
+    @media (pointer: coarse) { .knob i { left: 2px; width: 18px; height: 18px; } }
+    .drop-line[hidden], .drag-ghost[hidden], .knob[hidden] { display: none; }
+    /* 요약 고치기: 상자 끌어 옮기기, 오른쪽 아래 칸에서 글 고치기 */
+    .td-node.editable { cursor: grab; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+    .td-node.dragging { z-index: 3; opacity: .92; cursor: grabbing; box-shadow: 0 10px 28px rgba(0,0,0,.25); }
+    .td-node.drop { border-color: #6366f1; background: #eef2ff; box-shadow: 0 0 0 3px rgba(99,102,241,.35); }
+    .sheet-btn.sw-on { background: #fef3c7; border-color: #f59e0b; color: #92400e; }
+    .sheet-detail .ed-row { margin: 8px 0; }
+    .sheet-detail .ed-row > span { display: block; font-size: 11px; font-weight: 700; color: #6b7280; margin-bottom: 2px; }
+    .sheet-detail .ed { border: 1px dashed #cbd5e1; border-radius: 6px; padding: 3px 7px; min-height: 1.6em; cursor: text; outline: none; }
+    .sheet-detail .ed:focus { border: 1px solid #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,.2); }
+    .sheet-detail .ed.multi { white-space: pre-wrap; }
+    .sheet-detail .ed:empty::before { content: attr(data-ph); color: #9ca3af; }
+    .sheet-detail .ed-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+    .sheet-detail .danger { color: #b42318; }
+    :host([data-theme="dark"]) .td-node.drop { background: #262a4a; border-color: #818cf8; }
+    :host([data-theme="dark"]) .sheet-detail .ed { border-color: #3d434d; }
+    :host([data-theme="dark"]) .sheet-detail .danger { color: #f87171; }
+    :host([data-theme="dark"]) .sheet-btn.sw-on { background: #3b2f12; border-color: #b45309; color: #fbbf24; }
   ` + PANEL_CSS));
   const badgeLayer = h("div", { class: "layer" });
   const pop = h("div", { class: "pop", hidden: true, onmousedown: (e) => e.preventDefault() });
   shadow.append(badgeLayer);
+  // 수정 모드에서 끌어 고치기에 쓰는 화면 조각과 상태(그리기 함수가 먼저 부를 수 있어 여기서 만든다)
+  const dragLine = h("div", { class: "drop-line", hidden: true });
+  const dragGhost = h("div", { class: "drag-ghost", hidden: true });
+  const knobs = ["start", "end"].map((side) => h("div", { class: `knob ${side}`, hidden: true },
+    h("i", { title: side === "start" ? "끌어서 표시가 시작하는 자리 옮기기" : "끌어서 표시가 끝나는 자리 옮기기", onpointerdown: (e) => startKnob(e, side) })));
+  shadow.append(dragLine, dragGhost, ...knobs);
+  let boxDrag = null, knobFor = null, knobDrag = null;
+  let dragEndAt = 0; // 끌기를 막 끝낸 손가락·마우스의 「누르기」 는 무시한다(놓자마자 다른 것이 열리지 않게)
 
   const colors = () => MARK_COLORS[state.tpl] || MARK_COLORS.tech;
   function paint() {
@@ -714,6 +753,7 @@
   let raf = 0;
   const queueDraw = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(drawLayer); };
   function drawLayer() {
+    drawKnobs();
     for (const b of badgeLayer.querySelectorAll(".badge")) b.remove();
     const sx = window.scrollX, sy = window.scrollY;
     renderInline();
@@ -759,11 +799,17 @@
     .lab-sel { font: 700 12px "Pretendard Variable", "Pretendard", "Malgun Gothic", sans-serif; color: var(--c); border: 1px solid var(--nl-line, #e5e7eb); border-radius: 6px; background: var(--nl-focus, #fff); padding: 1px 4px; }
     .del { border: 0; background: none; color: #9ca3af; cursor: pointer; font-size: 12px; padding: 0 4px; }
     .del:hover { color: #b42318; }
+    .grip { border: 0; background: none; color: var(--nl-muted, #9ca3af); cursor: grab; font-size: 14px; line-height: 1; padding: 2px 4px; margin-left: -6px;
+      touch-action: none; user-select: none; -webkit-user-select: none; }
+    .grip:hover { color: #6366f1; }
+    .card.dragging { opacity: .35; }
+    @media (pointer: coarse) { .grip { padding: 6px 8px; font-size: 16px; } }
     @media (hover: none) { .edit { visibility: visible; } }
     @media (pointer: coarse) { .edit, .del { padding: 4px 8px; font-size: 13px; } }
   `;
   const inlineHosts = [];
   const inlineEls = new Map(); // 설명 id → 본문 속 카드(수정 중이면 글 칸). 새 설명을 달면 여기로 커서를 옮긴다
+  const cardEls = new Map();   // 설명 id → 본문 속 카드 전체(설명을 끌어 옮길 때 놓을 자리를 잰다)
   let inlineSig = "";
   // 그릴 내용 — 설명 카드와 번역. 글자를 고치는 동안에는 이 값을 같이 갱신해 다시 그리지 않는다(다시 그리면 커서가 날아간다)
   function inlineParts() {
@@ -784,8 +830,10 @@
       const labels = [...new Set([...Object.keys(colors), b.label])];
       const txt = editField(b.text, "설명을 쓰세요", (v) => { b.text = v; b.mine = true; });
       inlineEls.set(b.id, txt);
-      return h("div", { class: "card", style: `--c:${c}` },
+      let card = null;
+      card = h("div", { class: "card", style: `--c:${c}` },
         h("div", { class: "head" },
+          h("button", { class: "grip", title: "끌어서 다른 문단 아래나 다른 설명 앞뒤로 옮깁니다", "aria-label": "설명 옮기기", onpointerdown: (e) => startBoxDrag(e, b, card) }, "⋮⋮"),
           h("select", { class: "lab-sel", onchange: (e) => { b.label = e.target.value; b.mine = true; afterChange(); } },
             labels.map((l) => h("option", { value: l, selected: l === b.label }, l))),
           h("span", { class: "grow" }),
@@ -793,6 +841,8 @@
         txt,
         editField(b.pre, "(선택) 글자 그림·비교", (v) => { b.pre = v; b.mine = true; }, "pre"),
         b.answer || state.tpl === "exam" ? editField(b.answer, "(선택) 답 — 처음에 접혀 보입니다", (v) => { b.answer = v; b.mine = true; }) : null);
+      cardEls.set(b.id, card);
+      return card;
     }
     const card = h("div", { class: "card", style: `--c:${c}` },
       h("div", { class: "head" }, h("span", { class: "chip" }, b.label), h("span", { class: "grow" }),
@@ -801,7 +851,7 @@
       h("div", {}, b.text),
       b.pre ? h("pre", {}, b.pre) : null,
       b.answer ? h("details", {}, h("summary", {}, "답 보기"), h("div", {}, b.answer)) : null);
-    inlineEls.set(b.id, card);
+    inlineEls.set(b.id, card); cardEls.set(b.id, card);
     return card;
   }
   function inlineTr(i, t, edit) {
@@ -834,7 +884,7 @@
     if (sig === inlineSig) return; // 내용이 그대로면 손대지 않는다(끼우면 페이지 높이가 바뀌어 다시 그리기가 돌아오므로)
     inlineSig = sig;
     for (const x of inlineHosts.splice(0)) x.remove();
-    inlineEls.clear();
+    inlineEls.clear(); cardEls.clear();
     const colors = TEMPLATES[state.tpl].boxes;
     // 문단마다 번역 → 설명 순서로 한 덩어리
     const groups = new Map();
@@ -1190,16 +1240,23 @@
     if (!restored && (state.marks.some((m) => !m.mine) || state.boxes.some((b) => !b.mine))
       && !confirm("지금 있는 AI 표시·설명을 이 답으로 바꿀까요? 내가 단 표시와 설명은 남습니다.")) return null;
     const a = anchor(result);
-    state.marks = restored ? a.marks : [...state.marks.filter((m) => m.mine), ...a.marks];
+    // 내가 남긴 것(옮기거나 고친 AI 표시·설명 포함)과 글이 같은 새 표시·설명은 건너뛴다(같은 설명이 두 번 붙지 않게)
+    const myMarks = state.marks.filter((m) => m.mine), myBoxes = state.boxes.filter((b) => b.mine);
+    const markKey = (m) => `${m.kind}\u0000${squash(m.quote)}`;
+    const haveMark = new Set(myMarks.map(markKey)), haveBox = new Set(myBoxes.map((b) => squash(b.text)));
+    state.marks = restored ? a.marks : [...myMarks, ...a.marks.filter((m) => !haveMark.has(markKey(m)))];
     state.orphans = restored ? a.lost : state.orphans.filter((o) => o.mine);
     state.attaching = null;
-    state.boxes = restored ? a.boxes : [...state.boxes.filter((b) => b.mine), ...a.boxes];
+    state.boxes = restored ? a.boxes : [...myBoxes, ...a.boxes.filter((b) => !haveBox.has(squash(b.text)))];
     // 번역도 AI 것만 바꾸고 내가 고친 문단은 남긴다
     const trMap = restored ? new Map() : new Map([...state.trs].filter(([, t]) => t.mine));
     for (const t of a.trs) if (!trMap.has(t.i)) trMap.set(t.i, { text: t.text, mine: t.mine });
     state.trs = trMap;
     const c = cleanConcepts(result.concepts);
-    if (c || restored) state.concepts = c;
+    // 요약 구조도를 직접 고쳤으면, 새 답의 요약으로 바꾸기 전에 묻는다
+    const keepMine = !restored && c && state.concepts?.mine
+      && !confirm("요약 구조도를 직접 고친 적이 있습니다. 새 답의 요약으로 바꿀까요?\n(취소를 누르면 고친 요약을 그대로 둡니다)");
+    if ((c || restored) && !keepMine) state.concepts = c;
     if (restored || result.ink) HOST?.restoreExtra?.(result); // 품는 화면의 층도 되살린다
     paint(); drawLayer(); renderResult();
     if (!restored || a.moved) save(); // 자리를 다시 잡은 표시는 새 구절·앞뒤 글자로 저장해 둔다
@@ -1502,15 +1559,147 @@
     };
     const zoomCenter = (k) => zoomAt(view.z * k, body.clientWidth / 2, body.clientHeight / 2);
     zoomLabel.onclick = () => zoomAt(1, body.clientWidth / 2, body.clientHeight / 2);
+    // ── 고르기와 오른쪽 아래 칸: 수정 모드면 이름·풀이·관계·핵심 내용을 그 자리에서 고친다 ──
+    let selId = null, redrawT = 0;
+    const ptsOf = (n) => (Array.isArray(n.points) ? n.points : []).filter((x) => typeof x === "string" && x.trim());
+    const conceptsChanged = (now = false) => {
+      c.mine = true; // 고친 요약은 AI 답을 새로 붙일 때 바꿀지 묻는다
+      save(); renderResult();
+      clearTimeout(redrawT);
+      if (now) draw(); else redrawT = setTimeout(draw, 250);
+    };
+    const closeBtn = () => h("button", { class: "detail-close", title: "닫기", onclick: () => select(null) }, "✕");
+    const viewDetail = (n) => {
+      const pts = ptsOf(n), up = n.parent && c.nodes.find((x) => x.id === n.parent);
+      return [
+        closeBtn(),
+        h("h3", {}, n.term),
+        h("div", { class: "role" }, [n.role, up ? `${up.term} 의 ${relName(n) || "하위 개념"}` : null].filter(Boolean).join(" · ")),
+        n.gloss ? h("div", { class: "gloss" }, n.gloss) : null,
+        pts.length ? h("ul", {}, pts.map((x) => h("li", {}, x))) : null,
+        n.def?.quote ? h("button", { class: "go", onclick: () => { closeSummary(); showQuote(n.def); } }, "원문에서 보기 ↗") : null,
+      ].filter(Boolean);
+    };
+    const field = (name, value, ph, onText, multi = false) => h("div", { class: "ed-row" }, h("span", {}, name),
+      h("div", { class: `ed${multi ? " multi" : ""}`, contenteditable: "plaintext-only", "data-ph": ph,
+        oninput: (e) => { onText(multi ? e.target.innerText : tidy(e.target.innerText)); conceptsChanged(); } }, value || ""));
+    const editDetail = (n) => {
+      const up = n.parent && c.nodes.find((x) => x.id === n.parent);
+      return [
+        closeBtn(),
+        h("div", { class: "role" }, up ? `「${up.term}」 아래에 있는 개념` : "맨 위 개념", " · 상자를 끌어 다른 개념 위에 놓으면 그 밑으로 옮겨집니다"),
+        field("이름", n.term, "개념 이름", (v) => { n.term = v; }),
+        field("한 줄 풀이", n.gloss, "처음 보는 사람을 위한 한 줄 풀이", (v) => { n.gloss = v; }),
+        up ? field("위 개념과의 관계 (갈라지는 선에 붙는 이름)", n.rel, "예: 종류, 구성 요소, 단계", (v) => { n.rel = v; }) : null,
+        field("핵심 내용 (한 줄에 하나)", ptsOf(n).join("\n"), "개념을 누르면 펼쳐지는 핵심 내용", (v) => { n.points = v.split("\n").map(tidy).filter(Boolean); }, true),
+        h("div", { class: "ed-acts" },
+          h("button", { class: "sheet-btn", onclick: () => addChild(n) }, "+ 하위 개념"),
+          n.def?.quote ? h("button", { class: "sheet-btn", onclick: () => { closeSummary(); showQuote(n.def); } }, "원문에서 보기 ↗") : null,
+          h("button", { class: "sheet-btn danger", onclick: () => removeNode(n) }, "이 개념 지우기")),
+      ].filter(Boolean);
+    };
+    const select = (n) => {
+      selId = n ? n.id : null;
+      for (const e of body.querySelectorAll(".td-node")) e.classList.toggle("sel", e.dataset.id === selId);
+      if (!n) { detail.hidden = true; return; }
+      detail.hidden = false;
+      detail.replaceChildren(...(state.editing ? editDetail(n) : viewDetail(n)));
+    };
+    const addChild = (n) => {
+      const k = { id: uid(), term: "새 개념", parent: n.id, rel: "", gloss: "", points: [] };
+      c.nodes.push(k);
+      conceptsChanged(true);
+      select(k);
+      const ed = detail.querySelector(".ed");
+      ed?.focus();
+      try { const r = document.createRange(); r.selectNodeContents(ed); getSelection().removeAllRanges(); getSelection().addRange(r); } catch {}
+    };
+    const removeNode = (n) => {
+      if (!confirm(`「${n.term || "이름 없는 개념"}」 개념을 지울까요? 하위 개념은 한 칸 위로 올라갑니다.`)) return;
+      for (const k of c.nodes) if (k.parent === n.id) k.parent = n.parent ?? null;
+      c.nodes = c.nodes.filter((x) => x !== n);
+      c.links = c.links.filter((l) => l.from !== n.id && l.to !== n.id);
+      select(null);
+      if (!c.nodes.length) { state.concepts = null; closeSummary(); afterChange(); return; }
+      conceptsChanged(true);
+    };
+    // ── 상자 끌어 옮기기(수정 모드): 마우스는 그냥 끌고, 손가락·펜은 길게 누른 다음 끈다(짧게 끌면 지금처럼 화면 이동) ──
+    let nodeDrag = null;
+    const descOf = (id) => {
+      const out = new Set();
+      const walk = (p) => { for (const k of c.nodes) if (k.parent === p && !out.has(k.id)) { out.add(k.id); walk(k.id); } };
+      walk(id);
+      return out;
+    };
+    const inside = (r, x, y) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    const overEmpty = (x, y) => x != null && inside(body.getBoundingClientRect(), x, y) && (detail.hidden || !inside(detail.getBoundingClientRect(), x, y));
+    const beginNode = (d) => {
+      d.on = true;
+      clearTimeout(d.timer);
+      d.desc = descOf(d.n.id);
+      d.el.classList.add("dragging");
+      try { body.setPointerCapture(d.id); } catch {}
+      if (touches.delete(d.id)) { gesture = null; body.classList.remove("panning"); } // 손가락 끌기는 화면 이동 대신 상자 옮기기로
+      hint.textContent = "개념 위에 놓으면 그 밑으로 들어갑니다";
+    };
+    const grab = (e, n, el) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      const d = { n, el, id: e.pointerId, sx: e.clientX, sy: e.clientY, on: false, target: null, touch: e.pointerType !== "mouse", timer: 0 };
+      nodeDrag = d;
+      if (d.touch) d.timer = setTimeout(() => { if (nodeDrag === d && !d.on) beginNode(d); }, 450);
+    };
+    // 끄는 중이면 true(화면 이동을 건너뛴다)
+    const moveNode = (e) => {
+      const d = nodeDrag;
+      if (!d.on) {
+        if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 6) return !d.touch;
+        if (d.touch) { clearTimeout(d.timer); nodeDrag = null; return false; } // 길게 누르기 전에 움직였으면 화면 이동
+        beginNode(d);
+      }
+      d.x = e.clientX; d.y = e.clientY;
+      d.el.style.transform = `translate(${(d.x - d.sx) / view.z}px, ${(d.y - d.sy) / view.z}px)`;
+      let t = null;
+      for (const el of body.querySelectorAll(".td-node")) {
+        if (el === d.el || d.desc.has(el.dataset.id)) continue;
+        if (inside(el.getBoundingClientRect(), d.x, d.y)) { t = el; break; }
+      }
+      for (const el of body.querySelectorAll(".td-node.drop")) if (el !== t) el.classList.remove("drop");
+      t?.classList.add("drop");
+      d.target = t?.dataset.id || null;
+      const tn = d.target && c.nodes.find((x) => x.id === d.target);
+      hint.textContent = tn ? `「${tn.term}」 밑으로 옮깁니다`
+        : d.n.parent != null && overEmpty(d.x, d.y) ? "여기에 놓으면 맨 위 개념이 됩니다" : "개념 위에 놓으면 그 밑으로 들어갑니다";
+      return true;
+    };
+    const dropNode = () => {
+      const d = nodeDrag;
+      nodeDrag = null;
+      clearTimeout(d.timer);
+      if (!d.on) return;
+      dragEndAt = Date.now();
+      syncEditBtn();
+      const to = d.target ? d.target : overEmpty(d.x, d.y) ? null : undefined; // undefined = 놓을 데가 아님(그대로)
+      if (to !== undefined && to !== (d.n.parent ?? null)) { d.n.parent = to; conceptsChanged(true); }
+      else draw();
+    };
+    const hint = h("span", { class: "muted hint" });
+    const editToggle = h("button", { class: "sheet-btn", onclick: () => { setEditing(!state.editing); syncEditBtn(); select(null); draw(); } });
+    const syncEditBtn = () => {
+      editToggle.textContent = state.editing ? "✎ 수정 가능" : "🔒 수정 불가";
+      editToggle.className = `sheet-btn${state.editing ? " sw-on" : ""}`;
+      editToggle.title = state.editing ? "누르면 고칠 수 없게 합니다" : "누르면 개념 상자를 끌어 옮기고, 누른 개념의 이름·풀이·핵심 내용을 고칠 수 있습니다";
+      hint.textContent = state.editing ? "상자를 끌어 다른 개념 위에 놓기 · 눌러서 오른쪽 아래에서 고치기 · 빈 곳 끌기로 이동"
+        : "휠·두 손가락으로 확대·축소 · 끌어서 이동 · Esc 로 닫기";
+    };
     const draw = () => {
       pointsBtn.textContent = ui.showPoints ? "핵심 내용 접기" : "핵심 내용 펼치기";
       pointsBtn.setAttribute("aria-pressed", String(!!ui.showPoints));
       const tree = h("div", { class: "td-tree" });
       body.replaceChildren(tree);
-      layoutTopDown(tree, c, detail);
+      layoutTopDown(tree, c, { sel: selId, select, grab });
       if (view) apply(); else fit();
     };
-    pointsBtn.onclick = () => { ui.showPoints = !ui.showPoints; store.set(UI_KEY, { ...(store.get(UI_KEY) || {}), showPoints: ui.showPoints }); detail.hidden = true; draw(); };
+    pointsBtn.onclick = () => { ui.showPoints = !ui.showPoints; store.set(UI_KEY, { ...(store.get(UI_KEY) || {}), showPoints: ui.showPoints }); select(null); draw(); };
     body.addEventListener("wheel", (e) => {
       e.preventDefault();
       const r = body.getBoundingClientRect();
@@ -1536,6 +1725,7 @@
       else if (touches.size === 1) gesture = { kind: "pan", sx: local(e).x, sy: local(e).y, vx: view.x, vy: view.y, moved: false };
     });
     body.addEventListener("pointermove", (e) => {
+      if (nodeDrag && nodeDrag.id === e.pointerId && moveNode(e)) return;
       if (!touches.has(e.pointerId) || !gesture) return;
       touches.set(e.pointerId, local(e));
       if (gesture.kind === "pinch" && touches.size >= 2) {
@@ -1558,6 +1748,7 @@
       }
     });
     const lift = (e) => {
+      if (nodeDrag && nodeDrag.id === e.pointerId) dropNode();
       if (!touches.delete(e.pointerId)) return;
       if (touches.size === 1) { const [p] = [...touches.values()]; gesture = { kind: "pan", sx: p.x, sy: p.y, vx: view.x, vy: view.y, moved: true }; }
       else if (touches.size === 0) { gesture = null; body.classList.remove("panning"); }
@@ -1571,12 +1762,13 @@
           h("button", { class: "sheet-btn", title: "축소", onclick: () => zoomCenter(1 / 1.2) }, "－"), zoomLabel,
           h("button", { class: "sheet-btn", title: "확대", onclick: () => zoomCenter(1.2) }, "＋"),
           h("button", { class: "sheet-btn", title: "구조도 전체가 화면에 들어오게", onclick: fit }, "화면 맞춤")),
-        h("span", { class: "muted hint" }, "휠·두 손가락으로 확대·축소 · 끌어서 이동 · Esc 로 닫기"), h("button", { class: "sheet-close", title: "닫기", onclick: closeSummary }, "✕")),
+        editToggle, hint, h("button", { class: "sheet-close", title: "닫기", onclick: closeSummary }, "✕")),
       h("div", { class: "sheet-main" }, body, detail));
     shadow.append(sheet);
+    syncEditBtn();
     draw();
   }
-  function layoutTopDown(tree, c, detail) {
+  function layoutTopDown(tree, c, ctx) {
     const NW = 220, HG = 24, VG = 86, SUB = 30;
     const byId = new Map(c.nodes.map((n) => [n.id, n]));
     const kids = new Map();
@@ -1585,24 +1777,12 @@
     const alone = (n) => n.parent == null && !(kids.get(n.id) || []).length && !linked.has(n.id);
     const roots = (kids.get(null) || []).filter((n) => !alone(n)), lonely = (kids.get(null) || []).filter(alone);
     const els = new Map();
-    const select = (n) => {
-      for (const e of els.values()) e.classList.toggle("sel", e === els.get(n.id));
-      detail.hidden = false;
-      const pts = (Array.isArray(n.points) ? n.points : []).filter((x) => typeof x === "string" && x.trim());
-      const up = n.parent && byId.get(n.parent);
-      detail.replaceChildren(...[
-        h("button", { class: "detail-close", title: "닫기", onclick: () => { detail.hidden = true; for (const e of els.values()) e.classList.remove("sel"); } }, "✕"),
-        h("h3", {}, n.term),
-        h("div", { class: "role" }, [n.role, up ? `${up.term} 의 ${relName(n) || "하위 개념"}` : null].filter(Boolean).join(" · ")),
-        n.gloss ? h("div", { class: "gloss" }, n.gloss) : null,
-        pts.length ? h("ul", {}, pts.map((x) => h("li", {}, x))) : null,
-        n.def?.quote ? h("button", { class: "go", onclick: () => { closeSummary(); showQuote(n.def); } }, "원문에서 보기 ↗") : null,
-      ].filter(Boolean));
-    };
     const pts = (n) => (Array.isArray(n.points) ? n.points : []).filter((x) => typeof x === "string" && x.trim());
     const card = (n, extra = "") => {
-      const e = h("div", { class: `td-node${extra}`, "data-id": n.id, style: `width:${NW}px`, onclick: () => select(n) },
-        h("div", { class: "td-term" }, n.term), n.gloss ? h("div", { class: "td-gloss" }, n.gloss) : null,
+      const e = h("div", { class: `td-node${extra}${ctx.sel === n.id ? " sel" : ""}${state.editing ? " editable" : ""}`, "data-id": n.id, style: `width:${NW}px`,
+        onclick: () => { if (Date.now() - dragEndAt > 400) ctx.select(n); },
+        onpointerdown: state.editing ? (ev) => ctx.grab(ev, n, e) : null },
+        h("div", { class: "td-term" }, n.term || "(이름 없음)"), n.gloss ? h("div", { class: "td-gloss" }, n.gloss) : null,
         ui.showPoints && pts(n).length ? h("ul", { class: "td-points" }, pts(n).map((x) => h("li", {}, x))) : null);
       els.set(n.id, e); tree.append(e);
       return e;
@@ -1740,6 +1920,154 @@
     return card;
   }
 
+  // ── 설명 옮기기: 수정 모드에서 카드 왼쪽 손잡이(⋮⋮)를 끌어 다른 문단 아래·다른 설명 앞뒤로 옮긴다 ──
+  // 놓을 자리는 파란 줄로 보인다. 화면 위아래 끝으로 끌면 그쪽으로 굴러간다. Esc 로 그만둔다
+  function scrollerOf(el) {
+    for (let n = el?.parentElement; n && n !== document.body; n = n.parentElement) {
+      const st = getComputedStyle(n);
+      if (/(auto|scroll)/.test(st.overflowY) && n.scrollHeight > n.clientHeight + 1) return n;
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+  function startBoxDrag(e, b, card) {
+    if (e.button > 0 || boxDrag) return;
+    e.preventDefault(); e.stopPropagation();
+    hidePop(); hideKnobs();
+    boxDrag = { b, card, x: e.clientX, y: e.clientY, target: null, scroller: scrollerOf(b.el), raf: 0 };
+    card.classList.add("dragging");
+    dragGhost.replaceChildren(h("b", {}, b.label), " ", short(b.text || "(빈 설명)"));
+    dragGhost.hidden = false;
+    addEventListener("pointermove", boxDragMove, true);
+    addEventListener("pointerup", boxDragEnd, true);
+    addEventListener("pointercancel", boxDragStop, true);
+    addEventListener("keydown", boxDragKey, true);
+    boxDragFrame();
+  }
+  function boxDragMove(e) { if (!boxDrag) return; e.preventDefault(); boxDrag.x = e.clientX; boxDrag.y = e.clientY; }
+  function boxDragKey(e) { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); boxDragStop(); } }
+  function boxDragFrame() {
+    const d = boxDrag;
+    if (!d) return;
+    Object.assign(dragGhost.style, { left: `${Math.min(d.x + 14, innerWidth - 250)}px`, top: `${d.y + 16}px` });
+    // 화면(또는 PDF 처럼 안쪽에서 굴러가는 칸) 위아래 끝에 가까우면 그쪽으로 굴린다
+    const whole = d.scroller === document.scrollingElement || d.scroller === document.documentElement;
+    const sr = whole ? { top: 0, bottom: innerHeight } : d.scroller.getBoundingClientRect();
+    const top = Math.max(0, sr.top), bot = Math.min(innerHeight, sr.bottom), edge = 60;
+    if (d.y < top + edge) d.scroller.scrollTop -= Math.ceil((top + edge - d.y) / 4);
+    else if (d.y > bot - edge) d.scroller.scrollTop += Math.ceil((d.y - (bot - edge)) / 4);
+    const t = d.target = dropTarget(d);
+    if (t) { Object.assign(dragLine.style, { left: `${t.l}px`, top: `${t.y - 1.5}px`, width: `${Math.max(40, t.r - t.l)}px` }); dragLine.hidden = false; }
+    else dragLine.hidden = true;
+    d.raf = requestAnimationFrame(boxDragFrame);
+  }
+  // 놓을 자리: 다른 설명 카드 위면 그 앞이나 뒤, 아니면 가장 가까운 문단 바로 아래(그 문단의 설명들 맨 앞)
+  function dropTarget({ x, y, b }) {
+    for (const [id, el] of cardEls) {
+      const r = el.getBoundingClientRect();
+      if (!r.height || y < r.top - 4 || y > r.bottom + 4 || x < r.left - 40 || x > r.right + 40) continue;
+      if (id === b.id) return null; // 제자리
+      const other = state.boxes.find((o) => o.id === id);
+      if (!other) continue;
+      const before = y < (r.top + r.bottom) / 2;
+      return { box: other, before, l: r.left, r: r.right, y: before ? r.top - 3 : r.bottom + 3 };
+    }
+    let best = null, bestD = Infinity;
+    for (const p of state.paras) {
+      const r = p.el.getBoundingClientRect();
+      if (!r.height || r.bottom < -300 || r.top > innerHeight + 300) continue;
+      const dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+      const dx = x < r.left ? r.left - x : x > r.right ? x - r.right : 0;
+      const dist = dy + dx * 0.3 + (y < r.top ? 12 : 0); // 설명은 문단 아래에 붙으므로 문단 위쪽보다 아래쪽을 조금 더 반긴다
+      if (dist < bestD) { bestD = dist; best = { p, r }; }
+    }
+    return best && { para: best.p, l: best.r.left, r: best.r.right, y: best.r.bottom + 3 };
+  }
+  function boxDragStop() {
+    const d = boxDrag;
+    if (!d) return null;
+    cancelAnimationFrame(d.raf);
+    boxDrag = null;
+    d.card.classList.remove("dragging");
+    dragLine.hidden = true; dragGhost.hidden = true;
+    removeEventListener("pointermove", boxDragMove, true);
+    removeEventListener("pointerup", boxDragEnd, true);
+    removeEventListener("pointercancel", boxDragStop, true);
+    removeEventListener("keydown", boxDragKey, true);
+    return d;
+  }
+  function boxDragEnd(e) {
+    const d = boxDragStop();
+    dragEndAt = Date.now();
+    if (!d?.target) return;
+    e.preventDefault();
+    const { b, target: t } = d;
+    state.boxes = state.boxes.filter((x) => x !== b);
+    if (t.box) { b.el = t.box.el; state.boxes.splice(state.boxes.indexOf(t.box) + (t.before ? 0 : 1), 0, b); }
+    else {
+      b.el = t.para.el;
+      const i = state.boxes.findIndex((x) => x.el === b.el);
+      if (i < 0) state.boxes.push(b); else state.boxes.splice(i, 0, b);
+    }
+    b.mine = true; // 내가 옮긴 설명은 AI 답을 새로 붙여도 남는다
+    afterChange();
+  }
+
+  // ── 표시 범위 고치기: 수정 모드에서 표시를 누르면 처음·끝에 동그란 손잡이가 생긴다. 끌면 그 글자까지 표시가 늘거나 준다 ──
+  // 손잡이는 글줄 위(처음)·아래(끝)에 달려 있고, 끄는 동안에는 손잡이가 가리키던 글줄 높이에서 글자 자리를 찾는다(손가락에 글자가 가리지 않게)
+  const knobSize = () => (matchMedia("(pointer: coarse)").matches ? 18 : 12);
+  function showKnobs(m) { knobFor = m; drawKnobs(); }
+  function hideKnobs() { if (knobDrag) return; knobFor = null; for (const k of knobs) k.hidden = true; }
+  function drawKnobs() {
+    const m = knobFor;
+    if (!m) return;
+    if (!state.editing || !state.marks.includes(m)) { knobFor = null; for (const k of knobs) k.hidden = true; return; }
+    const lines = lineRects(m.range);
+    if (!lines.length) { for (const k of knobs) k.hidden = true; return; }
+    const a = lines[0], z = lines[lines.length - 1], K = knobSize();
+    Object.assign(knobs[0].style, { left: `${a.left - 11}px`, top: `${a.top - K}px`, height: `${a.bottom - a.top + K}px` });
+    Object.assign(knobs[1].style, { left: `${z.right - 11}px`, top: `${z.top}px`, height: `${z.bottom - z.top + K}px` });
+    for (const k of knobs) k.hidden = false;
+  }
+  function startKnob(e, side) {
+    const m = knobFor;
+    if (!m || e.button > 0) return;
+    e.preventDefault(); e.stopPropagation();
+    const lines = lineRects(m.range), L = side === "start" ? lines[0] : lines[lines.length - 1];
+    if (!L) return;
+    knobDrag = { m, side, dx: (side === "start" ? L.left : L.right) - e.clientX, dy: (L.top + L.bottom) / 2 - e.clientY, quote: m.quote };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    hidePop();
+    addEventListener("pointermove", knobMove, true);
+    addEventListener("pointerup", knobEnd, true);
+    addEventListener("pointercancel", knobEnd, true);
+  }
+  function knobMove(e) {
+    const d = knobDrag;
+    if (!d) return;
+    e.preventDefault();
+    const c = caretAt(e.clientX + d.dx, e.clientY + d.dy);
+    if (!c || c.node?.nodeType !== 3 || !state.root.contains(c.node)) return;
+    const r = document.createRange(), cur = d.m.range;
+    try {
+      if (d.side === "start") { r.setStart(c.node, c.offset); r.setEnd(cur.endContainer, cur.endOffset); }
+      else { r.setStart(cur.startContainer, cur.startOffset); r.setEnd(c.node, c.offset); }
+    } catch { return; }
+    if (r.collapsed || !squash(r.toString())) return; // 처음이 끝을 넘어가면 그대로 둔다
+    d.m.range = r;
+    paint(); drawKnobs();
+  }
+  function knobEnd() {
+    const d = knobDrag;
+    if (!d) return;
+    knobDrag = null; dragEndAt = Date.now();
+    removeEventListener("pointermove", knobMove, true);
+    removeEventListener("pointerup", knobEnd, true);
+    removeEventListener("pointercancel", knobEnd, true);
+    const q = tidy(d.m.range.toString());
+    if (q !== d.quote) { d.m.quote = q; d.m.mine = true; afterChange(); }
+    drawKnobs();
+  }
+
   // ── 수정 모드: 글자를 골라 표시·설명 달기, 표시를 눌러 바꾸기·지우기 ──
   function setEditing(on) {
     state.editing = on;
@@ -1784,6 +2112,7 @@
     ]);
   }
   function showMarkTools(m, x, y) {
+    showKnobs(m);
     const lines = lineRects(m.range);
     const lastLine = lines[lines.length - 1];
     showPop(x, (lastLine ? lastLine.bottom : y) + 6, [
@@ -1853,17 +2182,18 @@
   }
   function onClick(e) {
     if (!state.editing || e.composedPath().includes(host) || inNote(e)) return;
+    if (Date.now() - dragEndAt < 400) return;
     const sel = getSelection();
     if (sel && !sel.isCollapsed) return;
     const m = markAt(e.clientX, e.clientY);
-    if (!m) { hidePop(); return; }
+    if (!m) { hidePop(); hideKnobs(); return; }
     e.preventDefault(); e.stopPropagation(); // 표시가 링크 위에 있어도 페이지를 옮기지 않는다
     showMarkTools(m, e.clientX, e.clientY);
   }
   function onKey(e) {
     if (e.key !== "Escape") return;
     if (sheet) { closeSummary(); return; }
-    hidePop(); if (state.focus) setFocus(state.focus);
+    hidePop(); hideKnobs(); if (state.focus) setFocus(state.focus);
   }
   function onScroll() { queueDraw(); if (!pop.hidden && pop.dataset.keep !== "1") hidePop(); }
 
