@@ -26,7 +26,7 @@
   }
 
   // ── 표시 층과 주고받기 ──
-  let current = null; // { key, url, title }
+  let current = null; // { key, url, title, origin }
   const sameOrigin = (key, origin) => { try { return new URL(key).origin === origin; } catch { return false; } };
 
   // 로컬 시험 서버(localhost)에서만: 시험용 즐겨찾기가 표시 층 코드를 달라고 하면 이 창이 자기 서버에서 읽어 넘겨준다.
@@ -51,7 +51,7 @@
     try {
       if (d.type === "hello") {
         // 연결된 다음 다시 오는 인사(같은 페이지가 되풀이해 보낸 것)는 연결을 바꾸지 않고 답만 한다
-        current ??= { key: d.key, url: httpUrl(d.key) || d.key, title: String(d.title || "").slice(0, 300) };
+        current ??= { key: d.key, url: httpUrl(d.key) || d.key, title: String(d.title || "").slice(0, 300), origin: e.origin };
       }
       if (["hello", "load", "save", "delete"].includes(d.type)) {
         reply(await S.handle(d));
@@ -180,18 +180,27 @@
   };
   $("importFile").oncancel = () => status("파일 고르기가 취소됐습니다.");
   $("importFile").onchange = async (e) => {
-    let n = 0;
+    let n = 0, here = false;
     for (const f of e.target.files) {
       try {
         const rec = JSON.parse(await f.text());
         if (typeof rec?.key !== "string" || !httpUrl(rec.key) || typeof rec.data !== "object") continue;
         const old = await getPage(rec.key);
-        if (!old || (old.savedAt || 0) <= (rec.savedAt || 0)) { await putPage({ ...rec, data: clean(rec.data), savedAt: Number(rec.savedAt) || Date.now() }); n++; }
+        if (!old || (old.savedAt || 0) <= (rec.savedAt || 0)) {
+          await putPage({ ...rec, data: clean(rec.data), savedAt: Number(rec.savedAt) || Date.now() });
+          n++;
+          if (current && rec.key === current.key) here = true;
+        }
       } catch {}
     }
     const total = e.target.files.length;
     e.target.value = "";
-    status(`파일 ${total}개 중 ${n}개 페이지의 표시를 불러왔습니다${n < total ? "(notelayer 저장 파일이 아니거나 더 새 기록이 이미 있는 것은 건너뛰었습니다)" : ""}.`, n === 0);
+    // 지금 연결된 페이지의 기록을 불러왔으면 그 페이지에 알려 바로 다시 칠하게 한다.
+    // 페이지는 처음 연결될 때 한 번만 저장본을 꺼내므로, 알리지 않으면 저장 창에는 「저장됨」인데 페이지에는 아무것도 안 보였다
+    const live = here && window.opener && !window.opener.closed;
+    if (live) try { window.opener.postMessage({ nl: "store", type: "updated", id: 0 }, current.origin); } catch {}
+    status(`파일 ${total}개 중 ${n}개 페이지의 표시를 불러왔습니다${n < total ? "(notelayer 저장 파일이 아니거나 더 새 기록이 이미 있는 것은 건너뛰었습니다)" : ""}.`
+      + (live ? " 지금 연결된 페이지에 바로 칠했습니다." : n ? " 그 페이지를 열고 「이 페이지 위에 표시하기」를 누르면 칠해집니다." : ""), n === 0);
     render();
   };
 

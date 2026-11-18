@@ -1174,6 +1174,7 @@
     if (!NL_ORIGIN || e.origin !== NL_ORIGIN || !conn.win || e.source !== conn.win) return;
     const d = e.data;
     if (!d || d.nl !== "store") return;
+    if (d.type === "updated") { reloadSaved(); return; } // 저장 창에서 이 페이지의 기록 파일을 불러왔다
     if (d.type === "ready") {
       if (conn.ready) return;
       conn.ready = true; conn.folder = !!d.folder;
@@ -1191,18 +1192,29 @@
   async function onStoreReady() {
     if (conn.dirty) { save(); return; }
     if (hasData()) return;
+    await loadSaved();
+  }
+  // 저장본을 꺼내 칠한다. replace 면 지금 칠한 것을 비우고 저장본으로 바꾼다(저장 창에서 파일을 불러왔을 때)
+  async function loadSaved({ replace = false } = {}) {
     try {
       const r = await send("load");
-      if (r.record?.data && !hasData()) {
+      if (r.record?.data && (replace || !hasData())) {
         const data = r.record.data;
+        if (replace) { state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.concepts = null; }
         if (TEMPLATES[data.tpl]) { state.tpl = data.tpl; tplSelect.value = data.tpl; }
         const res = apply(data, { restored: true });
-        setSaved(`저장해 둔 표시를 불러왔습니다 · ${fmtTime(r.record.savedAt)}${r.from === "folder" ? " · 폴더의 파일에서" : ""}`
+        setSaved(`${replace ? "저장 창에서 불러온 파일로 다시 칠했습니다" : "저장해 둔 표시를 불러왔습니다"} · ${fmtTime(r.record.savedAt)}${r.from === "folder" ? " · 폴더의 파일에서" : ""}`
           + `${res?.moved ? ` · 글이 바뀌어 자리를 다시 잡은 표시 ${res.moved}개` : ""}${res?.orphans ? ` · 제자리를 잃은 표시 ${res.orphans}개` : ""}`);
       } else if (!r.record) setSaved("이 페이지에 저장한 표시가 아직 없습니다. 답을 적용하거나 고치면 자동으로 저장됩니다.");
     } catch (err) {
       setSaved(`불러오지 못했습니다: ${err.message}`, true);
     }
+  }
+  // 지금 칠한 것이 있으면 바꿀지 먼저 묻는다(저장 창은 더 새 기록만 들이므로, 불러온 파일이 지금 것보다 새것이다)
+  async function reloadSaved() {
+    if (hasData() && !confirm("저장 창에서 이 페이지의 기록 파일을 불러왔습니다. 지금 페이지의 표시를 불러온 내용으로 바꿀까요?")) return;
+    clearTimeout(saveTimer); conn.dirty = false;
+    await loadSaved({ replace: true });
   }
   function renderStore() {
     if (LOCAL) {
