@@ -286,9 +286,10 @@
       ...(state.concepts ? { concepts: state.concepts } : {}),
       ...(state.trs.size ? { translations: [...state.trs].sort((a, b) => a[0] - b[0])
         .map(([i, t]) => ({ p: i + 1, text: t.text, ...(t.mine ? { mine: true } : {}) })) } : {}),
+      ...(HOST?.extraData?.() || {}), // 품는 화면의 층(PDF 노트의 손글씨 ink)
     };
   }
-  const hasData = () => !!(state.marks.length || state.orphans.length || state.boxes.length || state.concepts || state.trs.size);
+  const hasData = () => !!(state.marks.length || state.orphans.length || state.boxes.length || state.concepts || state.trs.size || HOST?.hasExtra?.());
   let saveTimer = 0;
   // 고칠 때마다 저장 창에 보낸다. 저장 창이 닫혀 있으면 「저장하지 않은 변경」으로 남겨 두었다가 다시 연결되면 보낸다
   function save() {
@@ -1009,6 +1010,7 @@
     state.trs = trMap;
     const c = cleanConcepts(result.concepts);
     if (c || restored) state.concepts = c;
+    if (restored || result.ink) HOST?.restoreExtra?.(result); // 품는 화면의 층도 되살린다
     paint(); drawLayer(); renderResult();
     if (!restored || a.moved) save(); // 자리를 다시 잡은 표시는 새 구절·앞뒤 글자로 저장해 둔다
     tuckIfCovering();
@@ -1866,6 +1868,7 @@
       first: state.paras[0]?.text, last: state.paras.at(-1)?.text, side: state.side, width: state.width,
       marks: state.marks.length, boxes: state.boxes.length, orphans: state.orphans.length, editing: state.editing, popped: !!state.popup, key: KEY, store: conn.ready }),
     snapshot: () => serialize(),
+    save: () => save(), // 품는 화면이 자기 층(손글씨)을 고친 다음 저장을 부탁한다
     // 내보내기용: 표시마다 화면 위 줄 단위 네모(지금 스크롤 기준), 문단별 번역·설명, 요약, 다시 열 때 쓸 기록 원본
     exportLayer: () => {
       const notes = new Map();

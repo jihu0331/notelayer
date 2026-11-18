@@ -60,6 +60,16 @@
   :root[data-theme="dark"] .page { background: #1b1b1b; box-shadow: 0 1px 3px rgba(0,0,0,.5); }
   :root[data-theme="dark"] .page canvas.seg { filter: invert(1) hue-rotate(180deg); }
   .page .gap { position: absolute; left: 0; width: 100%; z-index: 1; }
+  /* 손글씨 층: 펜을 켰을 때만 누를 수 있다(꺼져 있으면 글자 고르기가 그대로 된다). 손가락은 화면 내리기, 펜슬·마우스는 쓰기 */
+  .page svg.ink { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 4; pointer-events: none; overflow: visible; }
+  .inking .page svg.ink { pointer-events: auto; touch-action: none; cursor: crosshair; }
+  .inking.erasing .page svg.ink { cursor: cell; }
+  :root[data-theme="dark"] .page svg.ink { filter: invert(1) hue-rotate(180deg); }
+  .pen-tools { display: inline-flex; gap: 4px; align-items: center; }
+  .pen-tools[hidden] { display: none; }
+  .pen-tools .sw { width: 22px; height: 22px; padding: 0; border-radius: 50%; border: 2px solid transparent; }
+  .pen-tools .sw[aria-pressed="true"] { border-color: var(--ink); }
+  .pen-tools .tool[aria-pressed="true"], #penBtn[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 18%, var(--btn)); border-color: var(--accent); }
   .theme-btn { padding: 3px 10px; font-size: 13px; }
   /* 쪽 그림은 조각(seg)으로 나뉜다. 설명·번역을 끼운 문단 아래에서 잘라 그 아래 조각을 밀어 내린다 */
   .page canvas.seg { position: absolute; left: 0; width: 100%; }

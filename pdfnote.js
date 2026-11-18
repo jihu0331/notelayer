@@ -285,6 +285,7 @@
       el("button", { title: "원본 PDF 내려받기", onclick: () => download(rec.blob, rec.name) }, "원본 내려받기"),
       el("button", { id: "exportBtn", title: "표시·설명·번역을 PDF 주석으로 넣고 notelayer 기록을 첨부한 PDF 를 내려받습니다. 굿노트·삼성 노트에서 열거나, 다른 기기의 notelayer 에서 열어 이어 볼 수 있습니다",
         onclick: () => exportPdf(rec) }, "주석 넣은 PDF 내보내기"),
+      penUi(),
       el("span", { id: "viewMsg", class: "muted" }));
 
     let lib, pdf;
@@ -323,7 +324,8 @@
       await lib.renderTextLayer({ textContentSource: tc, container: layer, viewport: vp, textDivs }).promise;
       layer.style.width = "100%"; layer.style.height = "100%"; // 문단을 아래로 밀어도 잘리지 않게 쪽 높이를 따라간다
       const paras = groupParagraphs(tc.items, textDivs, layer);
-      const rec = { n, page, vp, W, H, box, layer, paras, holders: new Map(), segs: [], full: null, blank: null, drawn: false, task: null, hideAnnots: !!embedded };
+      const rec = { n, page, vp, W, H, box, layer, paras, holders: new Map(), segs: [], full: null, blank: null, drawn: false, task: null, hideAnnots: !!embedded, scale };
+      rec.ink = inkLayer(rec);
       // 아주 짧은 조각(한 글자 등)은 요청문 문단에서 빼지만, 아래로 밀 때는 함께 민다
       for (const p of paras) { if (!p.tiny) paragraphs.push({ p: paragraphs.length + 1, el: p.el, text: p.text }); paraPage.set(p.el, { rec, para: p }); }
       pages.push(rec); allPages.push(rec);
@@ -354,12 +356,133 @@
       },
       // 표시 층이 설명·번역을 다시 그린 다음 부른다. 끼운 것이 있었거나 생긴 쪽만 다시 배치한다
       relayout: () => { for (const rec of pages) if (rec.holders.size || changed.has(rec)) relayout(rec); changed.clear(); },
+      // 손글씨는 표시·설명과 같은 기록에 저장한다(내보낸 PDF 첨부에도 들어간다)
+      extraData: () => (ink.strokes.length ? { ink: ink.strokes.map((s) => ({ n: s.n, c: s.c, w: s.w, ...(s.hl ? { hl: true } : {}), p: s.p })) } : {}),
+      hasExtra: () => ink.strokes.length > 0,
+      restoreExtra: (data) => {
+        ink.strokes = (Array.isArray(data?.ink) ? data.ink : [])
+          .filter((s) => s && Number.isInteger(s.n) && Array.isArray(s.p) && s.p.length && typeof s.c === "string")
+          .map((s) => ({ id: ++ink.seq, n: s.n, c: s.c, w: Number(s.w) || 2, hl: !!s.hl, p: s.p }));
+        for (const r of allPages) drawInk(r);
+      },
     };
     try { await loadScript("overlay.js"); }
     catch (err) { loading(`표시 층을 불러오지 못했습니다: ${err.message}`, true); pagesEl.before($("loading")); return; }
     applyTheme(); // 표시 층의 작은 창·요약 화면에도 테마를 알린다
     if (params.get("sample")) applySample(params.get("sample"));
     else if (embedded) applyEmbedded(embedded);
+  }
+
+  // ── 손글씨 층 ──
+  // 획은 「배율 1 의 쪽 좌표(PDF 단위, 왼쪽 위 기준)」 로 저장한다. PC·아이패드처럼 화면 폭이 달라도 같은 자리에 그려진다.
+  // 설명을 끼우려고 벌린 틈에는 쓰지 않고, 아래로 밀린 쪽에 쓴 획은 쪽 내용과 함께 움직인다.
+  // 펜을 켜면 펜슬·마우스는 쓰고, 손가락은 화면을 내린다(아이패드에서 펜슬로만 쓰는 노트 앱처럼)
+  const SVGNS = "http://www.w3.org/2000/svg";
+  const PENS = [{ c: "#1f2328", name: "검정" }, { c: "#d9480f", name: "빨강" }, { c: "#1c64f2", name: "파랑" }, { c: "#facc15", name: "형광펜", hl: true }];
+  const ink = { on: false, erase: false, pen: PENS[0], strokes: [], seq: 0 };
+  function penUi() {
+    const tools = el("span", { class: "pen-tools", hidden: true });
+    const btn = el("button", { id: "penBtn", "aria-pressed": "false", title: "PDF 위에 손글씨로 씁니다(아이패드는 펜슬로 쓰고 손가락으로 내립니다)" }, "✏ 펜");
+    const sync = () => {
+      btn.setAttribute("aria-pressed", String(ink.on)); tools.hidden = !ink.on;
+      document.documentElement.classList.toggle("inking", ink.on);
+      document.documentElement.classList.toggle("erasing", ink.on && ink.erase);
+      for (const b of tools.querySelectorAll("[data-pen]")) b.setAttribute("aria-pressed", String(!ink.erase && b.dataset.pen === ink.pen.c));
+      tools.querySelector(".eraser").setAttribute("aria-pressed", String(ink.erase));
+    };
+    btn.onclick = () => { ink.on = !ink.on; window.getSelection()?.removeAllRanges(); sync(); };
+    tools.append(
+      ...PENS.map((pn) => el("button", { class: "sw", "data-pen": pn.c, title: pn.name, style: `background:${pn.c}${pn.hl ? ";opacity:.7" : ""}`,
+        onclick: () => { ink.pen = pn; ink.erase = false; sync(); } })),
+      el("button", { class: "tool eraser", title: "지우개 — 획을 문지르면 그 획을 지웁니다", onclick: () => { ink.erase = !ink.erase; sync(); } }, "지우개"),
+      el("button", { class: "tool", title: "마지막 획 되돌리기 (Ctrl+Z)", onclick: undoInk }, "↶"));
+    addEventListener("keydown", (e) => { if (ink.on && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); undoInk(); } });
+    queueMicrotask(sync);
+    return el("span", { class: "row", style: "margin:0" }, btn, tools);
+  }
+  function saveInk() { window.NL_OVERLAY?.save?.(); }
+  function undoInk() { if (!ink.strokes.length) return; const s = ink.strokes.pop(); const r = allPages[s.n - 1]; if (r) drawInk(r); saveInk(); }
+  // 화면 자리 → 배율 1 의 쪽 좌표. 벌린 틈 안이면 null
+  function toPage(rec, e) {
+    const b = rec.box.getBoundingClientRect(), vx = e.clientX - b.left, vy = e.clientY - b.top;
+    let before = 0, py = null;
+    for (const sh of rec.shifts || []) {
+      if (vy < sh.y + before) { py = vy - before; break; }
+      if (vy < sh.y + sh.off) return null;
+      before = sh.off;
+    }
+    if (py == null) py = vy - before;
+    if (py < 0 || py > rec.H || vx < 0 || vx > rec.W) return null;
+    return [Math.round((vx / rec.scale) * 10) / 10, Math.round((py / rec.scale) * 10) / 10];
+  }
+  const pathOf = (pts, k) => pts.map(([x, y], i) => `${i ? "L" : "M"}${(x * k).toFixed(1)} ${(y * k).toFixed(1)}`).join(" ") + (pts.length === 1 ? " l0.1 0" : "");
+  function strokeEl(rec, s) {
+    const path = document.createElementNS(SVGNS, "path");
+    path.setAttribute("d", pathOf(s.p, rec.scale));
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", s.c);
+    path.setAttribute("stroke-width", String(s.w * rec.scale));
+    path.setAttribute("stroke-linecap", s.hl ? "butt" : "round");
+    path.setAttribute("stroke-linejoin", "round");
+    if (s.hl) { path.setAttribute("stroke-opacity", "0.38"); path.style.mixBlendMode = "multiply"; }
+    const minY = Math.min(...s.p.map((q) => q[1])) * rec.scale;
+    const off = rec.offAt ? rec.offAt(minY) : 0;
+    if (off) path.setAttribute("transform", `translate(0 ${off})`);
+    return path;
+  }
+  function drawInk(rec) { rec.ink.replaceChildren(...ink.strokes.filter((s) => s.n === rec.n).map((s) => strokeEl(rec, s))); }
+  function inkLayer(rec) {
+    const svg = document.createElementNS(SVGNS, "svg");
+    svg.setAttribute("class", "ink");
+    rec.box.append(svg);
+    let cur = null, scroll = null;
+    const near = (s, [x, y], r) => s.p.some(([a, b], i) => {
+      const [c, d] = s.p[i + 1] || [a, b];
+      const vx = c - a, vy = d - b, l2 = vx * vx + vy * vy;
+      const t = l2 ? Math.max(0, Math.min(1, ((x - a) * vx + (y - b) * vy) / l2)) : 0;
+      return Math.hypot(a + t * vx - x, b + t * vy - y) <= r + s.w / 2;
+    });
+    const eraseAt = (pt) => {
+      const before = ink.strokes.length;
+      ink.strokes = ink.strokes.filter((s) => s.n !== rec.n || !near(s, pt, 6));
+      if (ink.strokes.length !== before) { drawInk(rec); cur = { erased: true }; }
+    };
+    svg.addEventListener("pointerdown", (e) => {
+      if (!ink.on) return;
+      if (e.pointerType === "touch") { scroll = { y: e.clientY, id: e.pointerId }; return; } // 손가락은 화면 내리기
+      if (e.button !== 0) return;
+      const pt = toPage(rec, e);
+      if (!pt) return;
+      e.preventDefault();
+      svg.setPointerCapture(e.pointerId);
+      if (ink.erase) { cur = { erasing: true }; eraseAt(pt); return; }
+      const pressure = e.pointerType === "pen" && e.pressure ? e.pressure : 0.5;
+      const s = { id: ++ink.seq, n: rec.n, c: ink.pen.c, w: ink.pen.hl ? 12 : Math.round((1.2 + pressure * 1.6) * 10) / 10, hl: !!ink.pen.hl, p: [pt] };
+      cur = { s, el: strokeEl(rec, s) };
+      svg.append(cur.el);
+    });
+    svg.addEventListener("pointermove", (e) => {
+      if (scroll && e.pointerId === scroll.id) { window.scrollBy(0, scroll.y - e.clientY); scroll.y = e.clientY; return; }
+      if (!cur) return;
+      const pt = toPage(rec, e);
+      if (!pt) return;
+      if (cur.erasing || cur.erased) { eraseAt(pt); cur.erasing = true; return; }
+      const last = cur.s.p[cur.s.p.length - 1];
+      if (Math.hypot(pt[0] - last[0], pt[1] - last[1]) < 0.8) return;
+      cur.s.p.push(pt);
+      cur.el.setAttribute("d", pathOf(cur.s.p, rec.scale));
+    });
+    const end = (e) => {
+      if (scroll && e.pointerId === scroll.id) { scroll = null; return; }
+      if (!cur) return;
+      if (cur.s) { ink.strokes.push(cur.s); drawInk(rec); }
+      const changed = !!cur.s || cur.erasing || cur.erased;
+      cur = null;
+      if (changed) saveInk();
+    };
+    svg.addEventListener("pointerup", end);
+    svg.addEventListener("pointercancel", end);
+    return svg;
   }
 
   // ── 주석 넣은 PDF 내보내기 / 첨부된 기록 되살리기 ──
@@ -469,6 +592,18 @@
         add(p, { Subtype: "Text", Name: "Comment", Open: false, Rect: [Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2)], C: c, Contents: text(parts.join("\n\n")) });
         notes++;
       }
+      // 손글씨 = Ink 주석(굿노트·삼성 노트에서도 손글씨로 보인다)
+      let strokes = 0;
+      for (const s of ink.strokes) {
+        const p = allPages[s.n - 1];
+        if (!p) continue;
+        const flat = [], xs = [], ys = [];
+        for (const [x, y] of s.p) { const [X, Y] = pt(p, x * p.scale, y * p.scale); flat.push(X, Y); xs.push(X); ys.push(Y); }
+        const half = s.w / 2;
+        add(p, { Subtype: "Ink", InkList: [flat], Rect: [Math.min(...xs) - half, Math.min(...ys) - half, Math.max(...xs) + half, Math.max(...ys) + half],
+          C: hexRgb(s.c), BS: { W: s.w }, ...(s.hl ? { CA: 0.38 } : {}), Contents: text(s.hl ? "형광펜(손글씨)" : "손글씨") });
+        strokes++;
+      }
       // 요약: 1쪽 왼쪽 위 메모에 개념 구조를 들여쓰기로
       const cs = L.concepts;
       if (cs?.nodes?.length && allPages[0]) {
@@ -488,7 +623,7 @@
         creationDate: new Date(), modificationDate: new Date() });
       const out = await doc.save();
       download(new Blob([out], { type: "application/pdf" }), `${rec.name.replace(/\.pdf$/i, "")} (notelayer).pdf`);
-      viewMsg(`내보냈습니다 · 주석 표시 ${marks}개, 메모 ${notes}개${cs?.nodes?.length ? ", 요약 메모 1개" : ""} · 기록 첨부`);
+      viewMsg(`내보냈습니다 · 주석 표시 ${marks}개, 메모 ${notes}개${strokes ? `, 손글씨 ${strokes}획` : ""}${cs?.nodes?.length ? ", 요약 메모 1개" : ""} · 기록 첨부`);
     } catch (err) {
       viewMsg(`내보내지 못했습니다: ${err?.message || err}`, true);
     } finally {
@@ -547,6 +682,7 @@
       if (last && last.y === it.cut) last.off = off; else shifts.push({ y: it.cut, off });
     }
     const offAt = (y) => { let o = 0; for (const sh of shifts) if (y >= sh.y - 0.5) o = sh.off; return o; };
+    rec.shifts = shifts; rec.offAt = offAt;
     // 틈: 쪽 너비 전체를 그 줄의 바탕색으로 칠한다(카드 양옆 여백까지 종이처럼 이어지게)
     while ((rec.gaps ||= []).length > gapAt.size) rec.gaps.pop().remove();
     [...gapAt].forEach(([y, g], i) => {
@@ -568,6 +704,7 @@
       Object.assign(sg.canvas.style, { top: `${w.start + w.off}px`, height: `${w.end - w.start}px` });
     });
     paintSegs(rec);
+    if (rec.ink) drawInk(rec);
   }
   function paintSegs(rec) {
     for (const sg of rec.segs) {
