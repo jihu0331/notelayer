@@ -512,8 +512,11 @@
     .sheet-main { flex: 1; display: flex; min-height: 0; position: relative; }
     .sheet-btn { border: 1px solid #d0d7de; background: #f6f8fa; border-radius: 8px; padding: 3px 10px; cursor: pointer; font: inherit; font-size: 12px; color: #1f2328; }
     .sheet-btn:hover { background: #eef1f4; }
-    .sheet-body { flex: 1; overflow: auto; padding: 28px 32px 40px; }
-    .td-tree { position: relative; margin: 0 auto; }
+    .sheet-body { flex: 1; overflow: hidden; position: relative; }
+    .td-tree { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+    .sheet .zoom { display: inline-flex; gap: 2px; align-items: center; }
+    .sheet .zoom .sheet-btn { padding: 3px 8px; }
+    .sheet .zoom-val { min-width: 54px; }
     .td-lines { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
     .td-edge { fill: none; stroke: #9ca3af; stroke-width: 1.4; }
     .td-link { fill: none; stroke: #6366f1; stroke-width: 1.3; stroke-dasharray: 4 3; }
@@ -1270,27 +1273,55 @@
     const detail = h("div", { class: "sheet-detail", hidden: true });
     const body = h("div", { class: "sheet-body" });
     const pointsBtn = h("button", { class: "sheet-btn", title: "개념 상자마다 점(•)으로 적힌 핵심 내용을 모두 펼치고 접습니다" });
-    // 오른쪽 버튼을 누른 채 끌면 구조도 전체가 움직인다(옮긴 거리는 다시 그려도 유지)
-    let pan = { x: 0, y: 0 };
+    // 보기(위치·배율): 처음 열 때 한 번만 화면 폭에 맞추고, 그 뒤로는 사용자가 정한 대로 둔다
+    // (핵심 내용을 펼치고 접을 때마다 다시 맞추면 배율이 바뀌어 커졌다 작아졌다 했다)
+    // 휠 = 커서 자리를 중심으로 확대·축소, 오른쪽 버튼을 누른 채 끌기 = 이동
+    let view = null;
+    const zoomLabel = h("button", { class: "sheet-btn zoom-val", title: "100% 로" });
+    const apply = () => {
+      const tree = body.querySelector(".td-tree");
+      if (tree) tree.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.z})`;
+      zoomLabel.textContent = `${Math.round(view.z * 100)}%`;
+    };
+    const fit = () => {
+      const tree = body.querySelector(".td-tree");
+      const w = tree.offsetWidth, hgt = tree.offsetHeight, bw = body.clientWidth, bh = body.clientHeight;
+      const z = clamp(Math.min(1, (bw - 64) / w), 0.5, 1);
+      view = { z, x: Math.max(32, (bw - w * z) / 2), y: w * z <= bw && hgt * z < bh - 48 ? Math.max(24, (bh - hgt * z) / 2) : 24 };
+      apply();
+    };
+    // 화면의 (cx, cy) 자리를 그대로 둔 채 배율만 바꾼다
+    const zoomAt = (z2, cx, cy) => {
+      z2 = clamp(z2, 0.3, 2.5);
+      view.x = cx - (cx - view.x) * (z2 / view.z);
+      view.y = cy - (cy - view.y) * (z2 / view.z);
+      view.z = z2;
+      apply();
+    };
+    const zoomCenter = (k) => zoomAt(view.z * k, body.clientWidth / 2, body.clientHeight / 2);
+    zoomLabel.onclick = () => zoomAt(1, body.clientWidth / 2, body.clientHeight / 2);
     const draw = () => {
       pointsBtn.textContent = ui.showPoints ? "핵심 내용 접기" : "핵심 내용 펼치기";
       pointsBtn.setAttribute("aria-pressed", String(!!ui.showPoints));
       const tree = h("div", { class: "td-tree" });
       body.replaceChildren(tree);
       layoutTopDown(tree, c, detail);
-      movePan(tree);
+      if (view) apply(); else fit();
     };
-    const movePan = (tree) => { const z = Number(tree.style.zoom) || 1; tree.style.translate = `${pan.x / z}px ${pan.y / z}px`; };
     pointsBtn.onclick = () => { ui.showPoints = !ui.showPoints; store.set(UI_KEY, { ...(store.get(UI_KEY) || {}), showPoints: ui.showPoints }); detail.hidden = true; draw(); };
+    body.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const r = body.getBoundingClientRect();
+      zoomAt(view.z * Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top);
+    }, { passive: false });
     body.addEventListener("contextmenu", (e) => e.preventDefault());
     body.addEventListener("pointerdown", (e) => {
       if (e.button !== 2) return;
       e.preventDefault();
-      const tree = body.querySelector(".td-tree");
-      const x0 = e.clientX - pan.x, y0 = e.clientY - pan.y;
+      const x0 = e.clientX - view.x, y0 = e.clientY - view.y;
       body.setPointerCapture(e.pointerId);
       body.classList.add("panning");
-      const move = (ev) => { pan = { x: ev.clientX - x0, y: ev.clientY - y0 }; movePan(tree); };
+      const move = (ev) => { view.x = ev.clientX - x0; view.y = ev.clientY - y0; apply(); };
       const up = () => { body.removeEventListener("pointermove", move); body.removeEventListener("pointerup", up); body.removeEventListener("pointercancel", up); body.classList.remove("panning"); };
       body.addEventListener("pointermove", move);
       body.addEventListener("pointerup", up);
@@ -1298,13 +1329,18 @@
     });
     sheet = h("div", { class: "sheet", role: "dialog", "aria-label": "요약" },
       h("div", { class: "sheet-head" }, h("b", {}, "요약"), h("span", { class: "sheet-topic" }, c.topic), h("span", { class: "grow" }),
-        pointsBtn, h("span", { class: "muted" }, "오른쪽 버튼으로 끌어 이동 · Esc 로 닫기"), h("button", { class: "sheet-close", title: "닫기", onclick: closeSummary }, "✕")),
+        pointsBtn,
+        h("span", { class: "zoom" },
+          h("button", { class: "sheet-btn", title: "축소", onclick: () => zoomCenter(1 / 1.2) }, "－"), zoomLabel,
+          h("button", { class: "sheet-btn", title: "확대", onclick: () => zoomCenter(1.2) }, "＋"),
+          h("button", { class: "sheet-btn", title: "구조도 전체가 화면에 들어오게", onclick: fit }, "화면 맞춤")),
+        h("span", { class: "muted" }, "휠로 확대·축소 · 오른쪽 버튼으로 끌어 이동 · Esc 로 닫기"), h("button", { class: "sheet-close", title: "닫기", onclick: closeSummary }, "✕")),
       h("div", { class: "sheet-main" }, body, detail));
     shadow.append(sheet);
     draw();
   }
   function layoutTopDown(tree, c, detail) {
-    const NW = ui.showPoints ? 236 : 184, HG = 24, VG = 86, SUB = 30;
+    const NW = 220, HG = 24, VG = 86, SUB = 30;
     const byId = new Map(c.nodes.map((n) => [n.id, n]));
     const kids = new Map();
     for (const n of c.nodes) { if (!kids.has(n.parent)) kids.set(n.parent, []); kids.get(n.parent).push(n); }
@@ -1427,10 +1463,7 @@
       labelAt(lx, ly, l.label);
     }
     svg.setAttribute("height", String(height));
-    // 화면보다 넓으면 한눈에 들어오게 줄인다(너무 작아지면 읽기 어려우니 하한을 둔다)
-    const room = (tree.parentElement?.clientWidth || width) - 64;
-    // 핵심 내용을 펼치면 글자가 많아 덜 줄이고, 넘치는 부분은 오른쪽 버튼으로 끌어 본다
-    if (width > room) tree.style.zoom = String(Math.max(ui.showPoints ? 0.88 : 0.65, room / width));
+
     Object.assign(tree.style, { width: `${width}px`, height: `${height}px` });
     svg.setAttribute("width", String(width));
   }
