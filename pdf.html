@@ -3,16 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- PDF 쪽은 하얀 그림이라, 브라우저 강제 다크 모드·다크 모드 확장이 나머지만 어둡게 바꾸면 쪽 사이 설명 자리가 검은 띠가 된다. 종이처럼 밝게 둔다 -->
+<!-- 다크 모드는 이 화면이 직접 처리한다(PDF 그림까지 같은 규칙으로 어둡게). 브라우저 강제 다크 모드·다크 모드 확장은
+     PDF 그림만 남기고 나머지를 어둡게 바꿔 쪽 사이가 검은 띠가 되므로 끈다. 테마에 맞춰 pdfnote.js 가 color-scheme 을 바꾼다 -->
 <meta name="color-scheme" content="only light">
 <meta name="darkreader-lock">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <title>notelayer PDF 노트</title>
 <meta name="description" content="PDF 원본을 이 PC 에 보관하고, 원래 모양 그대로 펼쳐 그 위에 표시·설명·메모를 남긴다">
 <style>
-  :root { color-scheme: only light; --ink: #1f2328; --muted: #6b7280; --line: #e5e7eb; --accent: #0f766e; --warn: #b42318; --bg: #eef0f3; }
+  :root { color-scheme: only light; --ink: #1f2328; --muted: #6b7280; --line: #e5e7eb; --accent: #0f766e; --warn: #b42318; --bg: #eef0f3;
+    --card: #fff; --bar: rgba(255,255,255,.94); --btn: #f6f8fa; --btn-line: #d0d7de; --drop: #cbd5e1; }
+  :root[data-theme="dark"] { color-scheme: dark; --ink: #e6e8eb; --muted: #9aa1ab; --line: #2b2f36; --accent: #34d399; --warn: #f87171; --bg: #14161a;
+    --card: #1c1f25; --bar: rgba(20,22,26,.94); --btn: #252930; --btn-line: #363b44; --drop: #3a404a; }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.6 "Pretendard", "IBM Plex Sans KR", "Malgun Gothic", sans-serif; }
-  button { font: inherit; cursor: pointer; border: 1px solid #d0d7de; background: #f6f8fa; border-radius: 8px; padding: 5px 12px; color: var(--ink); }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.6 "Pretendard Variable", "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+  button { font: inherit; cursor: pointer; border: 1px solid var(--btn-line); background: var(--btn); border-radius: 8px; padding: 5px 12px; color: var(--ink); }
   button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
   button:disabled { opacity: .5; cursor: default; }
   a { color: inherit; }
@@ -23,21 +28,21 @@
 
   /* 위쪽 막대 — 펼쳐 보기 화면에서는 오른쪽 위를 notelayer 패널이 덮으므로 버튼은 모두 왼쪽에 둔다 */
   .bar { position: sticky; top: 0; z-index: 10; display: flex; gap: 10px 14px; align-items: center; flex-wrap: wrap;
-    padding: 10px 16px; background: rgba(255,255,255,.94); border-bottom: 1px solid var(--line); backdrop-filter: blur(6px); }
+    padding: 10px 16px; background: var(--bar); border-bottom: 1px solid var(--line); backdrop-filter: blur(6px); }
   .brand { font-weight: 700; text-decoration: none; }
   .bar .title { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 32vw; }
-  .bar a.link { text-decoration: none; color: #374151; }
+  .bar a.link { text-decoration: none; color: var(--muted); }
   .bar a.link:hover { text-decoration: underline; }
 
   /* 목록 화면 */
   .lib { max-width: 760px; margin: 0 auto; padding: 20px 16px 60px; }
   .lib h1 { font-size: 20px; margin: 8px 0 4px; }
-  .lib section { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin: 14px 0; }
+  .lib section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin: 14px 0; }
   .lib h2 { font-size: 14px; margin: 0 0 6px; }
-  .drop { border: 2px dashed #cbd5e1; border-radius: 10px; padding: 22px 14px; text-align: center; color: var(--muted); }
-  .drop.over { border-color: var(--accent); background: #f0fdfa; color: var(--ink); }
+  .drop { border: 2px dashed var(--drop); border-radius: 10px; padding: 22px 14px; text-align: center; color: var(--muted); }
+  .drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--ink); }
   ul.docs { list-style: none; margin: 0; padding: 0; }
-  ul.docs li { display: flex; gap: 10px; align-items: center; padding: 9px 0; border-top: 1px solid #f1f2f4; }
+  ul.docs li { display: flex; gap: 10px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); }
   ul.docs li:first-child { border-top: 0; }
   ul.docs .grow { flex: 1; min-width: 0; }
   ul.docs a.name { display: block; font-weight: 600; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -49,6 +54,11 @@
   .viewer { padding: 18px 0 60px 24px; }
   .pages { display: flex; flex-direction: column; gap: 16px; width: max-content; }
   .page { position: relative; background: #fff; box-shadow: 0 1px 3px rgba(15,23,42,.12), 0 6px 18px rgba(15,23,42,.06); }
+  /* 다크 모드: PDF 그림은 밝기만 뒤집고 색상은 되돌린다(PDF 리더들이 쓰는 방식). 쪽 바탕·설명 틈 색은 pdfnote.js 가 같은 규칙으로 계산한다 */
+  :root[data-theme="dark"] .page { background: #1b1b1b; box-shadow: 0 1px 3px rgba(0,0,0,.5); }
+  :root[data-theme="dark"] .page canvas.seg { filter: invert(1) hue-rotate(180deg); }
+  .page .gap { position: absolute; left: 0; width: 100%; z-index: 1; }
+  .theme-btn { padding: 3px 10px; font-size: 13px; }
   /* 쪽 그림은 조각(seg)으로 나뉜다. 설명·번역을 끼운 문단 아래에서 잘라 그 아래 조각을 밀어 내린다 */
   .page canvas.seg { position: absolute; left: 0; width: 100%; }
   .page .nl-hold { position: absolute; z-index: 3; }

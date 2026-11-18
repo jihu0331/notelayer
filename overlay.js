@@ -343,7 +343,7 @@
     * { box-sizing: border-box; }
     .panel { position: fixed; top: 12px; bottom: 12px; display: flex; flex-direction: column; pointer-events: auto;
       background: #fff; color: #1f2328; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.18);
-      font: 13px/1.6 "Pretendard", "IBM Plex Sans KR", "Malgun Gothic", sans-serif; overflow: hidden; }
+      font: 13px/1.6 "Pretendard Variable", "Pretendard", "IBM Plex Sans KR", "Malgun Gothic", sans-serif; overflow: hidden; }
     .panel[data-min] { display: none; }
     .panel.popped { position: static; width: auto !important; height: 100vh; border: 0; border-radius: 0; box-shadow: none; }
     .panel.popped .grip, .panel.popped .dock-only { display: none; }
@@ -432,13 +432,13 @@
     :host { all: initial; }
     .layer { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
     .badge { position: absolute; pointer-events: auto; cursor: pointer; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
-      color: #fff; font: 600 11px/20px "Pretendard", "Malgun Gothic", sans-serif; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+      color: #fff; font: 600 11px/20px "Pretendard Variable", "Pretendard", "Malgun Gothic", sans-serif; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
     .badge:hover { transform: scale(1.1); }
     .root-box { position: absolute; border: 2px dashed #f59e0b; border-radius: 6px; background: rgba(245, 158, 11, .06); }
     /* 접힌 패널 = 오른쪽 위 작은 요약 상자. 누르면 전체 패널이 펼쳐진다 */
     .mini { position: fixed; top: 12px; right: 12px; pointer-events: auto; cursor: pointer; max-width: min(360px, calc(100vw - 24px));
       background: #fff; color: #1f2328; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,.15);
-      padding: 7px 10px; font: 12px/1.5 "Pretendard", "IBM Plex Sans KR", "Malgun Gothic", sans-serif; }
+      padding: 7px 10px; font: 12px/1.5 "Pretendard Variable", "Pretendard", "IBM Plex Sans KR", "Malgun Gothic", sans-serif; }
     .mini[hidden] { display: none; }
     .mini:hover { box-shadow: 0 6px 22px rgba(0,0,0,.22); }
     .mini:focus-visible { outline: 2px solid #6366f1; }
@@ -466,7 +466,7 @@
     .mini .act.sw.on { background: #fff7ed; border-color: #f59e0b; color: #b45309; font-weight: 600; }
     /* 요약 크게 보기: 페이지 전체를 덮고 위에서 아래로 내려가는 구조도 */
     .sheet { position: fixed; inset: 0; z-index: 10; pointer-events: auto; display: flex; flex-direction: column; background: #f8fafc;
-      color: #1f2328; font: 13px/1.55 "Pretendard", "IBM Plex Sans KR", "Malgun Gothic", sans-serif; }
+      color: #1f2328; font: 13px/1.55 "Pretendard Variable", "Pretendard", "IBM Plex Sans KR", "Malgun Gothic", sans-serif; }
     .sheet-head { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid #e5e7eb; background: #fff; }
     .sheet-head b { font-size: 15px; }
     .sheet-topic { color: #374151; font-weight: 600; }
@@ -499,12 +499,33 @@
     .sheet-detail li { margin: 3px 0; }
     .sheet-detail .go { border: 1px solid #d0d7de; background: #f6f8fa; border-radius: 8px; padding: 4px 10px; cursor: pointer; font: inherit; }
     @media (max-width: 760px) { .sheet-main { flex-direction: column; } .sheet-detail { width: auto; border-left: 0; border-top: 1px solid #e5e7eb; max-height: 42vh; } }
+    /* 다크 테마(품는 화면이 notelayer-overlay 에 data-theme="dark" 를 단다) */
+    :host([data-theme="dark"]) .mini { background: #1f232a; color: #e5e7eb; border-color: #343a43; box-shadow: 0 4px 16px rgba(0,0,0,.5); }
+    :host([data-theme="dark"]) .mini-items { color: #d1d5db; }
+    :host([data-theme="dark"]) .mini .it button:hover { background: #2b3038; }
+    :host([data-theme="dark"]) .mini .it .eye { color: #9ca3af; }
+    :host([data-theme="dark"]) .mini .it.on .lab { background: #3b2f12; box-shadow: inset 0 0 0 1px #b45309; }
+    :host([data-theme="dark"]) .mini-acts { border-top-color: #343a43; }
+    :host([data-theme="dark"]) .mini .act { background: #2a2f37; border-color: #3d434d; color: #e5e7eb; }
+    :host([data-theme="dark"]) .mini .act:hover:not(:disabled) { background: #333943; }
+    :host([data-theme="dark"]) .mini .act.sw.on { background: #3b2f12; border-color: #b45309; color: #fbbf24; }
+    :host([data-theme="dark"]) .sheet { background: #14161a; color: #e5e7eb; }
+    :host([data-theme="dark"]) .sheet-head, :host([data-theme="dark"]) .sheet-detail { background: #1b1e24; border-color: #2b2f36; }
+    :host([data-theme="dark"]) .sheet-topic, :host([data-theme="dark"]) .sheet-detail .gloss { color: #d1d5db; }
+    :host([data-theme="dark"]) .sheet-close:hover { background: #2a2f37; color: #fff; }
+    :host([data-theme="dark"]) .td-node { background: #1f232a; border-color: #343a43; box-shadow: none; }
+    :host([data-theme="dark"]) .td-node.root { border-color: #e5e7eb; }
+    :host([data-theme="dark"]) .td-gloss { color: #9ca3af; }
+    :host([data-theme="dark"]) .td-edge { stroke: #4b5563; }
+    :host([data-theme="dark"]) .td-rel { background: #14161a; color: #9ca3af; }
+    :host([data-theme="dark"]) .td-lab { background: #262a4a; color: #c7d2fe; }
+    :host([data-theme="dark"]) .sheet-detail .go { background: #2a2f37; border-color: #3d434d; color: #e5e7eb; }
     .mk { display: inline-block; vertical-align: middle; margin-right: 4px; }
     .mk-key { color: var(--circle); font-weight: 700; text-decoration: underline solid var(--circle); text-decoration-thickness: 2px; text-underline-offset: 2px; }
     .mk-hl { width: 12px; height: 9px; background: var(--hl); }
     .mk-wave { width: 12px; height: 2px; border-bottom: 2px dotted var(--wave); }
     .pop { position: absolute; z-index: 5; pointer-events: auto; display: flex; gap: 2px; padding: 4px; border-radius: 9px; background: #1f2328; color: #fff;
-      font: 12px/1.4 "Pretendard", "Malgun Gothic", sans-serif; box-shadow: 0 6px 18px rgba(0,0,0,.3); white-space: nowrap; }
+      font: 12px/1.4 "Pretendard Variable", "Pretendard", "Malgun Gothic", sans-serif; box-shadow: 0 6px 18px rgba(0,0,0,.3); white-space: nowrap; }
     .pop[hidden] { display: none; }
     .pop button { border: 0; background: none; color: #fff; padding: 4px 8px; border-radius: 6px; cursor: pointer; font: inherit; }
     .pop button:hover { background: rgba(255,255,255,.15); }
@@ -592,24 +613,25 @@
   // ── 본문 속 설명 카드: 해당 문단 바로 아래에 끼운다. 원문 글자는 건드리지 않고, 카드는 Shadow DOM 으로 감싸 페이지 CSS 와 섞이지 않게 한다 ──
   const INLINE_CSS = `
     :host { all: initial; display: block; margin: 8px 0 14px; }
-    .card { border: 1px solid #e5e7eb; border-left: 3px solid var(--c); border-radius: 8px; background: #f8fafc; color: #1f2328;
-      padding: 8px 12px; margin: 6px 0; font: 14px/1.65 "Pretendard", "IBM Plex Sans KR", "Malgun Gothic", sans-serif; text-align: left; }
+    /* 색은 품는 화면(PDF 노트)이 종이 색에 맞춰 --nl-* 변수로 넘긴다. 반투명 층이라 어떤 바탕에서도 어울린다. 없으면 밝은 기본값 */
+    .card { border: 1px solid var(--nl-line, #e5e7eb); border-left: 3px solid var(--c); border-radius: 8px; background: var(--nl-card, #f8fafc); color: var(--nl-ink, #1f2328);
+      padding: 8px 12px; margin: 6px 0; font: 14px/1.65 "Pretendard Variable", "Pretendard", "IBM Plex Sans KR", "Malgun Gothic", sans-serif; text-align: left; }
     .head { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
-    .chip { font-size: 12px; font-weight: 700; color: var(--c); }
+    .chip { font-size: 12px; font-weight: 700; color: color-mix(in srgb, var(--c), white var(--nl-lift, 0%)); }
     .grow { flex: 1; }
-    .edit { border: 0; background: none; color: #9ca3af; cursor: pointer; font-size: 12px; padding: 0 4px; visibility: hidden; }
+    .edit { border: 0; background: none; color: var(--nl-muted, #9ca3af); cursor: pointer; font-size: 12px; padding: 0 4px; visibility: hidden; }
     .card:hover .edit { visibility: visible; }
-    pre { margin: 6px 0 0; padding: 6px 8px; background: #eef2f6; border-radius: 6px; font: 12.5px/1.5 "D2Coding", "NanumGothicCoding", Consolas, monospace; white-space: pre; overflow-x: auto; }
+    pre { margin: 6px 0 0; padding: 6px 8px; background: var(--nl-pre, #eef2f6); border-radius: 6px; font: 12.5px/1.5 "D2Coding", "NanumGothicCoding", Consolas, "Pretendard Variable", monospace; white-space: pre; overflow-x: auto; }
     details { margin-top: 6px; }
-    summary { cursor: pointer; color: #9c36b5; font-size: 13px; }
-    .tr { border-left: 3px solid #94a3b8; border-radius: 8px; background: #f8fafc; color: #334155; padding: 6px 12px; margin: 6px 0;
-      font: 14px/1.7 "Pretendard", "IBM Plex Sans KR", "Malgun Gothic", sans-serif; text-align: left; }
-    .tr-label { font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 1px; }
-    [contenteditable] { outline: 1px dashed #cbd5e1; border-radius: 4px; padding: 1px 3px; min-height: 1.5em; cursor: text; }
-    [contenteditable]:focus { outline: 2px solid #6366f1; background: #fff; }
+    summary { cursor: pointer; color: color-mix(in srgb, #9c36b5, white var(--nl-lift, 0%)); font-size: 13px; }
+    .tr { border-left: 3px solid var(--nl-tr-bar, #94a3b8); border-radius: 8px; background: var(--nl-card, #f8fafc); color: var(--nl-ink, #334155); padding: 6px 12px; margin: 6px 0;
+      font: 14px/1.7 "Pretendard Variable", "Pretendard", "IBM Plex Sans KR", "Malgun Gothic", sans-serif; text-align: left; }
+    .tr-label { font-size: 11px; font-weight: 700; color: var(--nl-muted, #64748b); margin-bottom: 1px; }
+    [contenteditable] { outline: 1px dashed var(--nl-line, #cbd5e1); border-radius: 4px; padding: 1px 3px; min-height: 1.5em; cursor: text; }
+    [contenteditable]:focus { outline: 2px solid #6366f1; background: var(--nl-focus, #fff); }
     [contenteditable]:empty::before { content: attr(data-ph); color: #9ca3af; }
     pre[contenteditable] { white-space: pre; margin-top: 6px; }
-    .lab-sel { font: 700 12px "Pretendard", "Malgun Gothic", sans-serif; color: var(--c); border: 1px solid #e5e7eb; border-radius: 6px; background: #fff; padding: 1px 4px; }
+    .lab-sel { font: 700 12px "Pretendard Variable", "Pretendard", "Malgun Gothic", sans-serif; color: var(--c); border: 1px solid var(--nl-line, #e5e7eb); border-radius: 6px; background: var(--nl-focus, #fff); padding: 1px 4px; }
     .del { border: 0; background: none; color: #9ca3af; cursor: pointer; font-size: 12px; padding: 0 4px; }
     .del:hover { color: #b42318; }
   `;

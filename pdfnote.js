@@ -48,6 +48,49 @@
 
   const params = new URLSearchParams(location.search);
   const docId = params.get("doc");
+
+  // ── 테마: 자동(시스템·브라우저 테마를 따름) / 밝게 / 어둡게 ──
+  // 다크 모드에서는 PDF 그림을 밝기만 뒤집고(pdf.html 의 filter) 쪽 바탕·설명 틈 색도 같은 규칙으로 바꿔, 그림과 설명이 한 장처럼 보이게 한다
+  const THEME_KEY = "notelayer:pdf-theme";
+  const THEME_NAME = { auto: "◐ 테마: 자동", light: "☀ 테마: 밝게", dark: "☾ 테마: 어둡게" };
+  let themePref = "auto";
+  try { themePref = localStorage.getItem(THEME_KEY) || "auto"; } catch {}
+  if (!THEME_NAME[themePref]) themePref = "auto";
+  const darkQuery = matchMedia("(prefers-color-scheme: dark)");
+  const isDark = () => themePref === "dark" || (themePref === "auto" && darkQuery.matches);
+  const allPages = [];
+  const themeBtn = el("button", { class: "theme-btn", title: "자동 → 밝게 → 어둡게 순서로 바꿉니다", onclick: () => {
+    themePref = { auto: "light", light: "dark", dark: "auto" }[themePref];
+    try { localStorage.setItem(THEME_KEY, themePref); } catch {}
+    applyTheme();
+  } });
+  document.querySelector(".bar a.link[href='index.html']")?.before(themeBtn);
+  function applyTheme() {
+    const dark = isDark();
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    // 브라우저 강제 다크 모드가 덧칠하지 않게, 밝을 때는 「밝게만」, 어두울 때는 「어둡게」 를 선언한다
+    document.documentElement.style.colorScheme = dark ? "dark" : "only light";
+    document.querySelector('meta[name="color-scheme"]')?.setAttribute("content", dark ? "dark" : "only light");
+    document.querySelector("notelayer-overlay")?.setAttribute("data-theme", dark ? "dark" : "light");
+    themeBtn.textContent = THEME_NAME[themePref];
+    for (const rec of allPages) relayout(rec);
+  }
+  darkQuery.addEventListener?.("change", () => { if (themePref === "auto") applyTheme(); });
+  applyTheme();
+  // CSS 의 invert(1) hue-rotate(180deg) 를 색 하나에 똑같이 적용한다(그림과 틈 색이 맞도록)
+  function darkOf([r, g, b]) {
+    const R = 255 - r, G = 255 - g, B = 255 - b;
+    const c = (v) => Math.max(0, Math.min(255, Math.round(v)));
+    return [c(-0.574 * R + 1.430 * G + 0.144 * B), c(0.426 * R + 0.430 * G + 0.144 * B), c(0.426 * R + 1.430 * G - 0.856 * B)];
+  }
+  // 설명 카드 색: 바탕이 어두우면 밝은 글자에 옅게 밝힌 층, 밝으면 짙은 글자에 옅게 어둡힌 층. 반투명이라 바탕 색이 비친다
+  function cardVars(node, [r, g, b]) {
+    const dark = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 < 0.5;
+    const v = dark
+      ? { card: "rgba(255,255,255,.06)", line: "rgba(255,255,255,.14)", ink: "#e5e7eb", pre: "rgba(255,255,255,.07)", muted: "#9ca3af", "tr-bar": "rgba(255,255,255,.3)", focus: "rgba(255,255,255,.09)", lift: "40%" }
+      : { card: "rgba(0,0,0,.035)", line: "rgba(0,0,0,.09)", ink: "#1f2328", pre: "rgba(0,0,0,.05)", muted: "#6b7280", "tr-bar": "rgba(0,0,0,.25)", focus: "#fff", lift: "0%" };
+    for (const [k, val] of Object.entries(v)) node.style.setProperty(`--nl-${k}`, val);
+  }
   // 예시: 저장소의 예시 문서 본문으로 만든 PDF 에, 같은 문서에 들어 있는 표시·설명·요약을 얹어 보여 준다
   const SAMPLES = {
     "http-vs-http2": { pdf: "docs/sample-http2.pdf", name: "HTTP-1.1과 HTTP-2 (notelayer 예시).pdf", doc: "documents/http-vs-http2.js", tpl: "tech" },
@@ -284,7 +327,7 @@
       const rec = { n, page, vp, W, H, box, layer, paras, holders: new Map(), segs: [], full: null, blank: null, drawn: false, task: null };
       // 아주 짧은 조각(한 글자 등)은 요청문 문단에서 빼지만, 아래로 밀 때는 함께 민다
       for (const p of paras) { if (!p.tiny) paragraphs.push({ p: paragraphs.length + 1, el: p.el, text: p.text }); paraPage.set(p.el, { rec, para: p }); }
-      pages.push(rec);
+      pages.push(rec); allPages.push(rec);
       relayout(rec);
     }
     $("loading").hidden = true;
@@ -315,6 +358,7 @@
     };
     try { await loadScript("overlay.js"); }
     catch (err) { loading(`표시 층을 불러오지 못했습니다: ${err.message}`, true); pagesEl.before($("loading")); return; }
+    applyTheme(); // 표시 층의 작은 창·요약 화면에도 테마를 알린다
     if (params.get("sample")) applySample(params.get("sample"));
   }
 
@@ -352,7 +396,15 @@
     const bl = Math.min(...body.map((q) => q.left)), br = Math.max(...body.map((q) => q.right));
     let off = 0;
     const shifts = []; // { y, off }: y 아래는 off 만큼 민다
+    const gapAt = new Map(); // 자를 줄 → { top, color }
+    const dark = isDark();
     for (const it of items) {
+      // 틈 색 = 자른 줄의 PDF 바탕색(다크 모드면 그림과 같은 규칙으로 바꾼 색). 그림을 아직 안 그렸으면 흰 종이로 본다
+      if (!gapAt.has(it.cut)) {
+        const paper = rec.rowColor ? rec.rowColor(Math.min(it.cut, rec.H - 1)) : [255, 255, 255];
+        gapAt.set(it.cut, { top: it.cut + off, color: dark ? darkOf(paper) : paper });
+      }
+      cardVars(it.hd, gapAt.get(it.cut).color);
       const narrow = it.para.right - it.para.left < (br - bl) * 0.55 && (it.para.left > bl + (br - bl) * 0.3 || it.para.right < br - (br - bl) * 0.3);
       const [l, r] = narrow ? [it.para.left, Math.max(it.para.right, Math.min(rec.W - 8, it.para.left + 360))] : [bl, br];
       Object.assign(it.hd.style, { top: `${it.cut + off}px`, left: `${l}px`, width: `${Math.min(r, rec.W - 6) - l}px` });
@@ -361,6 +413,13 @@
       if (last && last.y === it.cut) last.off = off; else shifts.push({ y: it.cut, off });
     }
     const offAt = (y) => { let o = 0; for (const sh of shifts) if (y >= sh.y - 0.5) o = sh.off; return o; };
+    // 틈: 쪽 너비 전체를 그 줄의 바탕색으로 칠한다(카드 양옆 여백까지 종이처럼 이어지게)
+    while ((rec.gaps ||= []).length > gapAt.size) rec.gaps.pop().remove();
+    [...gapAt].forEach(([y, g], i) => {
+      let d = rec.gaps[i];
+      if (!d) { d = el("div", { class: "gap" }); rec.box.append(d); rec.gaps.push(d); }
+      Object.assign(d.style, { top: `${g.top}px`, height: `${offAt(y) - (g.top - y)}px`, background: `rgb(${g.color.join(",")})` });
+    });
     for (const p of rec.paras) p.el.style.transform = offAt(p.top) ? `translateY(${offAt(p.top)}px)` : "";
     rec.box.style.height = `${rec.H + off}px`;
     // 그림 조각: [0, 첫 자를 줄), [자를 줄, 다음 자를 줄) … 마다 캔버스 하나
@@ -393,16 +452,21 @@
     const ctx = c.getContext("2d", { willReadFrequently: true });
     ctx.drawImage(rec.full, 0, 0, sw, sh);
     const d = ctx.getImageData(0, 0, sw, sh).data;
-    const rows = new Uint8Array(sh);
+    const rows = new Uint8Array(sh), cols = new Uint8ClampedArray(sh * 3);
     for (let y = 0; y < sh; y++) {
-      let lo = 255, hi = 0;
+      let lo = 255, hi = 0, r = 0, g = 0, b = 0;
       for (let x = 0; x < sw; x++) {
         const i = (y * sw + x) * 4, v = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
         if (v < lo) lo = v; if (v > hi) hi = v;
+        r += d[i]; g += d[i + 1]; b += d[i + 2];
       }
       rows[y] = hi - lo < 14 ? 1 : 0;
+      cols.set([r / sw, g / sw, b / sw], y * 3);
     }
-    rec.blank = (y) => rows[Math.min(sh - 1, Math.max(0, Math.floor(y * sh / rec.H)))] === 1;
+    const at = (y) => Math.min(sh - 1, Math.max(0, Math.floor(y * sh / rec.H)));
+    rec.blank = (y) => rows[at(y)] === 1;
+    // 그 줄의 평균 색 = 바탕색(자를 줄은 고른 색 줄이므로 평균이 곧 바탕색이다)
+    rec.rowColor = (y) => { const k = at(y) * 3; return [cols[k], cols[k + 1], cols[k + 2]]; };
   }
 
   // 원본 그림은 화면 가까이 온 쪽만 그린다. 쪽이 많으면 멀어진 쪽의 그림은 비워 메모리를 아낀다(글자 층·표시는 그대로 남는다)
