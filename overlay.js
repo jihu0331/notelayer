@@ -427,6 +427,41 @@
     .mnode .points { margin: 4px 0 0; padding-left: 16px; font-size: 12px; color: #374151; }
     .rel-label { position: absolute; z-index: 2; font-size: 10.5px; line-height: 1.35; color: #4338ca; background: #eef2ff; border-radius: 6px; padding: 1px 5px; cursor: default; }
     .rel-label.on { background: #6366f1; color: #fff; }
+    /* 다크 테마: 품는 화면이 notelayer-overlay 에 data-theme="dark" 를 달면 패널에 dark 가 붙는다(따로 떼어 낸 창에서도 유지) */
+    .panel.dark { background: #1b1e24; color: #e5e7eb; border-color: #2f343c; box-shadow: 0 8px 30px rgba(0,0,0,.6); color-scheme: dark; }
+    .panel.dark header, .panel.dark .tabs { border-color: #2b2f36; }
+    .panel.dark .edit-bar { background: #3b2a12; color: #fbbf24; border-color: #5b3d15; }
+    .panel.dark button { background: #2a2f37; border-color: #3d434d; }
+    .panel.dark button.primary { background: #e5e7eb; color: #111827; border-color: #e5e7eb; }
+    .panel.dark button.icon { background: none; color: #9ca3af; }
+    .panel.dark button.icon:hover { background: #2a2f37; color: #e5e7eb; }
+    .panel.dark button.toggle[aria-pressed="true"] { background: #3b2a12; color: #fbbf24; }
+    .panel.dark select, .panel.dark textarea { background: #14161a; border: 1px solid #3d434d; color: #e5e7eb; }
+    .panel.dark .muted, .panel.dark details.steps > summary, .panel.dark .tabs button { color: #9ca3af; }
+    .panel.dark .msg { color: #34d399; }
+    .panel.dark .msg.err { color: #f87171; }
+    .panel.dark h3 { color: #d1d5db; }
+    .panel.dark .savebar { background: #22262d; }
+    .panel.dark .orphans { background: #2a2414; border-color: #5b4a17; }
+    .panel.dark .o-head { color: #fbbf24; }
+    .panel.dark .o-sub { color: #a8a29e; }
+    .panel.dark .o-attach { color: #fdba74; }
+    .panel.dark .o-item.on { background: #3b2f12; }
+    .panel.dark .tabs button[aria-selected="true"] { border-bottom-color: #e5e7eb; color: #e5e7eb; }
+    .panel.dark .card { border-color: #2f343c; }
+    .panel.dark .card:hover { background: #22262d; }
+    .panel.dark .card-head select { background: #14161a; border-color: #3d434d; }
+    .panel.dark .chip, .panel.dark .card-head select { color: color-mix(in srgb, var(--c), white 40%); }
+    .panel.dark .card pre { background: #14161a; }
+    .panel.dark .card summary, .panel.dark .ans-ed { color: #d8b4fe; }
+    .panel.dark .map-lines .tree { stroke: #4b5563; }
+    .panel.dark .mnode { background: #22262d; border-color: #343a43; }
+    .panel.dark .mnode.topic { background: #e5e7eb; color: #111827; border-color: #e5e7eb; }
+    .panel.dark .mnode .gloss { color: #9ca3af; }
+    .panel.dark .mnode .points { color: #d1d5db; }
+    .panel.dark .map-sub { color: #9ca3af; border-color: #343a43; }
+    .panel.dark .tree-label { background: #2a2f37; color: #cbd5e1; border-color: #3d434d; }
+    .panel.dark .rel-label { background: #262a4a; color: #c7d2fe; }
   `;
   shadow.append(h("style", {}, `
     :host { all: initial; }
@@ -835,6 +870,10 @@
     h("div", { class: "body" }, saveBar, steps, resultBox));
   // 도구 막대는 패널보다 위에 그려야 패널 옆 글자를 골라도 눌린다
   shadow.append(panel, pill, pop);
+  // 품는 화면이 테마를 바꾸면(notelayer-overlay 의 data-theme) 패널도 따라간다
+  const syncTheme = () => panel.classList.toggle("dark", host.getAttribute("data-theme") === "dark");
+  new MutationObserver(syncTheme).observe(host, { attributes: true, attributeFilter: ["data-theme"] });
+  syncTheme();
 
   function setMin(min) {
     if (min) panel.setAttribute("data-min", ""); else panel.removeAttribute("data-min");
