@@ -1799,6 +1799,19 @@
       first: state.paras[0]?.text, last: state.paras.at(-1)?.text, side: state.side, width: state.width,
       marks: state.marks.length, boxes: state.boxes.length, orphans: state.orphans.length, editing: state.editing, popped: !!state.popup, key: KEY, store: conn.ready }),
     snapshot: () => serialize(),
+    // 내보내기용: 표시마다 화면 위 줄 단위 네모(지금 스크롤 기준), 문단별 번역·설명, 요약, 다시 열 때 쓸 기록 원본
+    exportLayer: () => {
+      const notes = new Map();
+      const note = (el) => { if (!notes.has(el)) notes.set(el, { el, tr: "", boxes: [] }); return notes.get(el); };
+      for (const [i, t] of [...state.trs].sort((a, b) => a[0] - b[0])) if (state.paras[i] && t.text) note(state.paras[i].el).tr = t.text;
+      for (const b of sortedBoxes()) note(b.el).boxes.push({ label: b.label, text: b.text, pre: b.pre, answer: b.answer });
+      return {
+        tpl: state.tpl, template: TEMPLATES[state.tpl], colors: colors(),
+        marks: state.marks.map((m) => ({ kind: m.kind, quote: m.quote, mine: !!m.mine, rects: lineRects(m.range) })),
+        notes: [...notes.values()], concepts: state.concepts,
+        record: { v: 1, tpl: state.tpl, ...serialize() }, paragraphs: state.paras.map((x) => x.text),
+      };
+    },
     restore: (data) => { state.marks = []; state.orphans = []; state.boxes = []; state.concepts = null; state.trs = new Map(); return apply(data, { restored: true }); },
     destroy,
   };

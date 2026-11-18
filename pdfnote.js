@@ -282,7 +282,10 @@
     $("docTitle").textContent = rec.name;
     $("barActions").replaceChildren(
       el("a", { class: "link", href: "pdf.html" }, "← 목록"),
-      el("button", { title: "원본 PDF 내려받기", onclick: () => download(rec.blob, rec.name) }, "원본 내려받기"));
+      el("button", { title: "원본 PDF 내려받기", onclick: () => download(rec.blob, rec.name) }, "원본 내려받기"),
+      el("button", { id: "exportBtn", title: "표시·설명·번역을 PDF 주석으로 넣고 notelayer 기록을 첨부한 PDF 를 내려받습니다. 굿노트·삼성 노트에서 열거나, 다른 기기의 notelayer 에서 열어 이어 볼 수 있습니다",
+        onclick: () => exportPdf(rec) }, "주석 넣은 PDF 내보내기"),
+      el("span", { id: "viewMsg", class: "muted" }));
 
     let lib, pdf;
     try {
@@ -293,6 +296,8 @@
       return;
     }
     await S.putPdf({ ...rec, pages: pdf.numPages, openedAt: Date.now() }).catch(() => {});
+    // notelayer 가 내보낸 PDF 면 기록 원본(notelayer.json)이 첨부돼 있다. 그 PDF 에 박힌 주석은 화면에서 숨긴다(표시 층과 두 번 칠해지지 않게)
+    const embedded = await readEmbedded(pdf);
 
     const pagesEl = $("pages");
     const first = await pdf.getPage(1);
@@ -318,7 +323,7 @@
       await lib.renderTextLayer({ textContentSource: tc, container: layer, viewport: vp, textDivs }).promise;
       layer.style.width = "100%"; layer.style.height = "100%"; // 문단을 아래로 밀어도 잘리지 않게 쪽 높이를 따라간다
       const paras = groupParagraphs(tc.items, textDivs, layer);
-      const rec = { n, page, vp, W, H, box, layer, paras, holders: new Map(), segs: [], full: null, blank: null, drawn: false, task: null };
+      const rec = { n, page, vp, W, H, box, layer, paras, holders: new Map(), segs: [], full: null, blank: null, drawn: false, task: null, hideAnnots: !!embedded };
       // 아주 짧은 조각(한 글자 등)은 요청문 문단에서 빼지만, 아래로 밀 때는 함께 민다
       for (const p of paras) { if (!p.tiny) paragraphs.push({ p: paragraphs.length + 1, el: p.el, text: p.text }); paraPage.set(p.el, { rec, para: p }); }
       pages.push(rec); allPages.push(rec);
@@ -354,6 +359,141 @@
     catch (err) { loading(`표시 층을 불러오지 못했습니다: ${err.message}`, true); pagesEl.before($("loading")); return; }
     applyTheme(); // 표시 층의 작은 창·요약 화면에도 테마를 알린다
     if (params.get("sample")) applySample(params.get("sample"));
+    else if (embedded) applyEmbedded(embedded);
+  }
+
+  // ── 주석 넣은 PDF 내보내기 / 첨부된 기록 되살리기 ──
+  // 내보낸 PDF 한 장에 두 가지를 담는다.
+  //  1) PDF 표준 주석: 핵심어=밑줄(Underline), 중요한 문장=형광펜(Highlight), 확인 필요=물결 밑줄(Squiggly),
+  //     문단별 번역·설명=메모(Text), 1쪽 왼쪽 위에 요약 메모. 굿노트·삼성 노트·PDF 뷰어에서 보인다
+  //  2) 첨부 파일 notelayer.json: 표시 자리·설명·번역·요약 원본. 다른 기기의 notelayer 에서 이 PDF 를 열면 그대로 되살아난다
+  // 주석은 작성자(T)를 notelayer 로 달아, 다시 내보낼 때 예전 것을 지우고 새로 넣는다
+  const NL_ATTACH = "notelayer.json";
+  async function readEmbedded(pdf) {
+    try {
+      const att = await pdf.getAttachments();
+      const f = att && Object.values(att).find((a) => a?.filename === NL_ATTACH);
+      if (!f) return null;
+      const j = JSON.parse(new TextDecoder().decode(f.content));
+      return j?.app === "notelayer" && j.data && typeof j.data === "object" ? j : null;
+    } catch { return null; }
+  }
+  async function applyEmbedded(j) {
+    for (let i = 0; i < 40 && !window.NL_OVERLAY?.info().store; i++) await new Promise((ok) => setTimeout(ok, 150));
+    const ov = window.NL_OVERLAY, info = ov?.info();
+    if (!ov || info.marks || info.boxes || info.orphans) return; // 이 기기에 이미 기록이 있으면 그쪽을 쓴다
+    if (j.data.tpl) ov.useTemplate(j.data.tpl);
+    const r = ov.apply(JSON.stringify(j.data));
+    if (r) viewMsg(`PDF 에 첨부된 notelayer 기록을 불러왔습니다 · 표시 ${r.placed}개, 설명 ${r.boxes}개${r.lost?.length ? ` · 자리를 못 찾은 표시 ${r.lost.length}개` : ""}`);
+  }
+  function viewMsg(text, err = false) { const m = $("viewMsg"); if (m) { m.className = err ? "muted err" : "muted ok"; m.textContent = text; } }
+
+  const hexRgb = (css) => {
+    const m = /^#([0-9a-f]{6})$/i.exec(css || "");
+    if (m) { const n = parseInt(m[1], 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => v / 255); }
+    // 반투명 색(형광펜)은 흰 종이에 얹었을 때 보이는 색으로 바꾼다(PDF 뷰어마다 투명도 처리가 달라 진하게 나왔다)
+    const r = /rgba?\(([^)]+)\)/.exec(css || "");
+    if (!r) return [1, 0.85, 0];
+    const [cr, cg, cb, a = 1] = r[1].split(",").map(Number);
+    return [cr, cg, cb].map((v) => 1 - a * (1 - v / 255));
+  };
+  const shiftOf = (node) => Number(/translateY\(([-\d.]+)px\)/.exec(node.style.transform || "")?.[1] || 0);
+  // 화면 위 네모 → (쪽, 아래로 밀기 전 쪽 좌표). 설명을 끼우려고 아래로 민 만큼은 되돌린다
+  function pageRect(r) {
+    const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
+    for (const p of allPages) {
+      const b = p.box.getBoundingClientRect();
+      if (cx < b.left || cx > b.right || cy < b.top || cy > b.bottom) continue;
+      const para = p.paras.find((q) => { const qr = q.el.getBoundingClientRect(); return cx >= qr.left - 2 && cx <= qr.right + 2 && cy >= qr.top - 2 && cy <= qr.bottom + 2; });
+      const ty = para ? shiftOf(para.el) : 0;
+      return { p, x1: r.left - b.left, x2: r.right - b.left, y1: r.top - b.top - ty, y2: r.bottom - b.top - ty };
+    }
+    return null;
+  }
+  async function exportPdf(rec) {
+    const ov = window.NL_OVERLAY;
+    if (!ov) return;
+    const btn = $("exportBtn");
+    btn.disabled = true; viewMsg("PDF 를 만드는 중…");
+    try {
+      const L = ov.exportLayer();
+      const { PDFDocument, PDFName, PDFDict, PDFArray, PDFString, PDFHexString } = await window.NL_VENDOR.pdflib();
+      const doc = await PDFDocument.load(new Uint8Array(await rec.blob.arrayBuffer()), { updateMetadata: false });
+      const pdfPages = doc.getPages(), ctx = doc.context;
+      const text = (t) => PDFHexString.fromText(String(t));
+      const textOf = (o) => { try { return o?.decodeText?.(); } catch { return undefined; } };
+      // 예전에 넣은 notelayer 주석·첨부는 지운다
+      for (const pg of pdfPages) {
+        const annots = pg.node.Annots();
+        if (!annots) continue;
+        for (let i = annots.size() - 1; i >= 0; i--) if (textOf(annots.lookup(i, PDFDict)?.lookup(PDFName.of("T"))) === "notelayer") annots.remove(i);
+      }
+      const efNames = doc.catalog.lookupMaybe(PDFName.of("Names"), PDFDict)?.lookupMaybe(PDFName.of("EmbeddedFiles"), PDFDict)?.lookupMaybe(PDFName.of("Names"), PDFArray);
+      if (efNames) for (let i = efNames.size() - 2; i >= 0; i -= 2) if (textOf(efNames.lookup(i)) === NL_ATTACH) { efNames.remove(i + 1); efNames.remove(i); }
+
+      const now = PDFString.fromDate(new Date());
+      let seq = 0;
+      const add = (p, dict) => {
+        const ref = ctx.register(ctx.obj({ Type: "Annot", F: 4, T: text("notelayer"), M: now, NM: PDFString.of(`notelayer-${++seq}`), ...dict }));
+        pdfPages[p.n - 1].node.addAnnot(ref);
+      };
+      const pt = (p, x, y) => p.vp.convertToPdfPoint(x, y);
+      const t = L.template;
+      const SUB = { circle: "Underline", highlight: "Highlight", wave: "Squiggly" };
+      const COLOR = { circle: hexRgb(L.colors.circle), highlight: hexRgb(L.colors.hl), wave: hexRgb(L.colors.wave) };
+      let marks = 0, notes = 0;
+      for (const m of L.marks) {
+        const byPage = new Map();
+        for (const r of m.rects) { const q = pageRect(r); if (q) { if (!byPage.has(q.p)) byPage.set(q.p, []); byPage.get(q.p).push(q); } }
+        for (const [p, qs] of byPage) {
+          const quads = [], xs = [], ys = [];
+          for (const q of qs) {
+            const pts = [pt(p, q.x1, q.y1), pt(p, q.x2, q.y1), pt(p, q.x1, q.y2), pt(p, q.x2, q.y2)];
+            for (const [x, y] of pts) { quads.push(x, y); xs.push(x); ys.push(y); }
+          }
+          add(p, { Subtype: SUB[m.kind], Rect: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)], QuadPoints: quads,
+            C: COLOR[m.kind], Contents: text(`${t.marks[m.kind]}${m.mine ? " (내 표시)" : ""}: ${m.quote}`) });
+          marks++;
+        }
+      }
+      // 문단별 번역·설명 = 문단 왼쪽 여백(없으면 오른쪽)의 메모 하나
+      for (const nt of L.notes) {
+        const at = paraPage.get(nt.el);
+        if (!at) continue;
+        const { rec: p, para } = at;
+        const x = para.left >= 26 ? para.left - 22 : Math.min(p.W - 20, para.right + 4), y = para.top;
+        const [x1, y1] = pt(p, x, y + 18), [x2, y2] = pt(p, x + 18, y);
+        const parts = [nt.tr ? `[번역]\n${nt.tr}` : "",
+          ...nt.boxes.map((b) => `[${b.label}]\n${b.text}${b.pre ? `\n${b.pre}` : ""}${b.answer ? `\n(답) ${b.answer}` : ""}`)].filter(Boolean);
+        const c = nt.boxes[0] ? hexRgb(t.boxes[nt.boxes[0].label]) : [0.45, 0.5, 0.58];
+        add(p, { Subtype: "Text", Name: "Comment", Open: false, Rect: [Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2)], C: c, Contents: text(parts.join("\n\n")) });
+        notes++;
+      }
+      // 요약: 1쪽 왼쪽 위 메모에 개념 구조를 들여쓰기로
+      const cs = L.concepts;
+      if (cs?.nodes?.length && allPages[0]) {
+        const kids = new Map();
+        for (const n of cs.nodes) { if (!kids.has(n.parent)) kids.set(n.parent, []); kids.get(n.parent).push(n); }
+        const lines = [`[요약] ${cs.topic}`], seen = new Set();
+        const walk = (pid, d) => { for (const n of kids.get(pid) || []) { if (seen.has(n.id)) continue; seen.add(n.id);
+          lines.push(`${"  ".repeat(d)}${d ? "–" : "•"} ${n.term}${n.gloss ? ` — ${n.gloss}` : ""}`); walk(n.id, d + 1); } };
+        walk(null, 0);
+        for (const l of cs.links || []) { const a = cs.nodes.find((n) => n.id === l.from), b = cs.nodes.find((n) => n.id === l.to); if (a && b) lines.push(`↪ ${a.term} → ${b.term} (${l.label})`); }
+        const p = allPages[0], [x1, y1] = pt(p, 6, 24), [x2, y2] = pt(p, 24, 6);
+        add(p, { Subtype: "Text", Name: "Note", Open: false, Rect: [Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2)], C: [0.39, 0.4, 0.95], Contents: text(lines.join("\n")) });
+      }
+      const payload = { app: "notelayer", v: 1, savedAt: Date.now(), title: rec.name, data: L.record, paragraphs: L.paragraphs };
+      await doc.attach(new TextEncoder().encode(JSON.stringify(payload)), NL_ATTACH, {
+        mimeType: "application/json", description: "notelayer 기록 — notelayer PDF 노트에서 이 PDF 를 열면 표시·설명·번역·요약이 되살아납니다",
+        creationDate: new Date(), modificationDate: new Date() });
+      const out = await doc.save();
+      download(new Blob([out], { type: "application/pdf" }), `${rec.name.replace(/\.pdf$/i, "")} (notelayer).pdf`);
+      viewMsg(`내보냈습니다 · 주석 표시 ${marks}개, 메모 ${notes}개${cs?.nodes?.length ? ", 요약 메모 1개" : ""} · 기록 첨부`);
+    } catch (err) {
+      viewMsg(`내보내지 못했습니다: ${err?.message || err}`, true);
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   // ── 문단 아래 벌리기 ──
@@ -475,7 +615,8 @@
           const full = document.createElement("canvas");
           full.width = Math.floor(p.vp.width * dpr);
           full.height = Math.floor(p.vp.height * dpr);
-          p.task = p.page.render({ canvasContext: full.getContext("2d"), viewport: p.vp, transform: dpr === 1 ? null : [dpr, 0, 0, dpr, 0, 0] });
+          p.task = p.page.render({ canvasContext: full.getContext("2d"), viewport: p.vp, transform: dpr === 1 ? null : [dpr, 0, 0, dpr, 0, 0],
+            annotationMode: p.hideAnnots ? window.pdfjsLib.AnnotationMode.DISABLE : undefined });
           p.task.promise.then(() => {
             if (!p.drawn) return;
             p.full = full;

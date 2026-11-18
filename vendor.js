@@ -5,6 +5,7 @@
   const VENDOR = {
     pdfjs: { src: "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js", sri: "sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" },
     pdfjsWorker: { src: "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js", sri: "sha384-SnzOobpRMLXZ52iJvZm/C0fYw0OQemTXzTjIsdsfMcrCtCEe9qgzxTd3RSklO5x2" },
+    pdflib: { src: "https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js", sri: "sha384-weMABwrltA6jWR8DDe9Jp5blk+tZQh7ugpCsF3JwSA53WZM9/14PjS5LAJNHNjAI" },
     mammoth: { src: "https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js", sri: "sha384-/cXAMbzovUIKbBERjPmR3SnPTh8siWr5lsvFYj1Uq4XP0yaJUZJmsh0YXyGv5P0y" },
   };
   const loaded = {};
@@ -35,5 +36,7 @@
     return lib;
   }
   async function mammoth() { await load("mammoth"); return window.mammoth; }
-  window.NL_VENDOR = { pdfjs, mammoth };
+  // pdf-lib: PDF 파일에 주석·첨부 파일을 써 넣는다(pdf.js 는 읽고 그리기만 한다)
+  async function pdflib() { await load("pdflib"); return window.PDFLib; }
+  window.NL_VENDOR = { pdfjs, mammoth, pdflib };
 })();
