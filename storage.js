@@ -43,9 +43,14 @@
     return p === "granted" ? { dir, state: "granted", name: dir.name || "" } : { dir: null, state: "prompt", name: dir.name || "" };
   }
   function hash(s) { let h = 2166136261; for (const c of s) { h ^= c.codePointAt(0); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); }
-  // PDF 노트 주소(pdf.html?doc=…)인지. 맞으면 문서 id 를 돌려준다
+  // notelayer 자기 주소의 PDF 노트(pdf.html?doc=…)인지. 맞으면 문서 id 를 돌려준다.
+  // 다른 사이트가 주소 끝을 pdf.html?doc=… 로 꾸며도 PDF 노트 기록과 같은 파일 이름을 얻지 못하게 출처와 경로를 함께 본다
+  const PDF_PAGE = new URL("pdf.html", location.href);
   function pdfDocId(key) {
-    try { const u = new URL(key); return u.pathname.endsWith("/pdf.html") ? u.searchParams.get("doc") || null : null; } catch { return null; }
+    try {
+      const u = new URL(key);
+      return u.origin === PDF_PAGE.origin && u.pathname === PDF_PAGE.pathname ? u.searchParams.get("doc") || null : null;
+    } catch { return null; }
   }
   const safeId = (id) => String(id).replace(/[^\p{L}\p{N}_-]+/gu, "-").slice(0, 90);
   // 파일 이름은 주소로 정해진다. 다른 PC 에서 같은 폴더를 연결하면 같은 이름으로 찾는다. 물음표 뒤는 이름에 넣지 않고 끝의 짧은 해시로만 구분한다.
@@ -63,8 +68,12 @@
     await w.write(JSON.stringify(rec, null, 1));
     await w.close();
   }
+  // 파일 안에 적힌 주소가 찾는 주소와 같을 때만 돌려준다(이름이 같아도 다른 주소의 기록은 믿지 않는다)
   async function readFile(dir, key) {
-    try { return JSON.parse(await (await (await dir.getFileHandle(fileName(key))).getFile()).text()); } catch { return null; }
+    try {
+      const rec = JSON.parse(await (await (await dir.getFileHandle(fileName(key))).getFile()).text());
+      return rec?.key === key ? rec : null;
+    } catch { return null; }
   }
   async function removeFile(dir, key) { try { await dir.removeEntry(fileName(key)); } catch {} }
   async function writeBlob(dir, name, blob) {
