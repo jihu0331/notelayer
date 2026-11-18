@@ -72,12 +72,16 @@
   function findRoot() {
     const scores = new Map();
     const add = (node, v) => { if (node && node !== document.documentElement) scores.set(node, (scores.get(node) || 0) + v); };
+    // 점수는 네 단계 위 상자까지, 위로 갈수록 줄여서 올린다(1 → 1/2 → 1/3 → 1/4).
+    // 두 단계까지만 올리면 여러 겹 목록으로 된 글(항목이 ul>li>ul>li…)은 점수가 작은 목록들에 흩어져,
+    // 혼자 긴 코드 블록 하나가 본문으로 뽑혔다(gmlwjd9405.github.io 의 HTTP 헤더 글에서 확인).
+    // 코드(pre)는 설명하는 글이 아니라 예시라 점수를 낮게 친다
     for (const el of document.body.querySelectorAll(LEAF)) {
       if (el.closest(SKIP) || !isLeaf(el)) continue;
-      const len = textLen(el);
+      const len = textLen(el) * (el.tagName === "PRE" ? 0.3 : 1);
       if (len < 20) continue;
-      add(el.parentElement, len);
-      add(el.parentElement?.parentElement, len / 2);
+      let node = el.parentElement;
+      for (let d = 1; d <= 4 && node; d++, node = node.parentElement) add(node, len / d);
     }
     let best = null, bestScore = 0;
     for (const [el, s] of scores) {
