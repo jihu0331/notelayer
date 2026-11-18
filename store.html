@@ -31,6 +31,10 @@
   li.here { background: #f0fdfa; margin: 0 -12px; padding: 7px 12px; }
   li button { border: 0; background: none; color: var(--muted); padding: 0 4px; }
   #cur .title { font-weight: 600; }
+  #choices { border-color: #f59e0b; background: #fffbeb; }
+  .choice { padding: 8px 0; border-top: 1px solid #fde68a; }
+  .choice:first-child { border-top: 0; }
+  .choice .url { color: var(--muted); font-size: 12px; word-break: break-all; }
 </style>
 </head>
 <body>
@@ -40,6 +44,10 @@
 </header>
 <main>
   <p id="status" class="muted" role="status"></p>
+  <section id="choices" hidden>
+    <h2>다른 페이지의 기록</h2>
+    <div id="choiceList"></div>
+  </section>
   <section id="cur">
     <h2>지금 페이지</h2>
     <div id="curBody" class="muted">표시 층과 연결을 기다리는 중…</div>

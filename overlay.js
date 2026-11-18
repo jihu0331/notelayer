@@ -69,15 +69,64 @@
   };
 
   // ── 본문 고르기: 긴 문단이 몰려 있고 링크 비율이 낮은 영역 (브라우저 읽기 모드와 같은 생각) ──
+  // 본문 고르기는 세 겹이다. 어떤 추측도 100% 는 아니라, 틀리면 사용자가 「본문 다시 고르기」로 직접 고르고 그 사이트에 기억한다
+  //  ① 이 사이트(호스트)에서 사용자가 직접 고른 상자
+  //  ② 사이트가 붙여 둔 본문 표시: 검색 엔진용 articleBody 표시, 흔한 블로그 도구의 본문 상자 이름, 페이지에 하나뿐인 <article>
+  //  ③ 점수(아래 scoreRoot) — 표시가 없을 때만
+  const ROOT_KEY = `notelayer:root:${location.host}`;
+  const SITE_ROOTS = [
+    '[itemprop="articleBody"]',
+    "#article-view", ".tt_article_useless_p_margin", ".article_view", // 티스토리
+    ".entry-content", // 워드프레스 등
+    ".post-content", ".markdown-body", // 지킬(GitHub 블로그)·GitHub 문서
+    ".mw-parser-output", // 위키백과
+    ".se-main-container", // 네이버 스마트에디터
+    ".wrap_body", // 브런치
+    ".prose", // 테일윈드 글 서식을 쓰는 사이트
+  ];
+  // 본문 후보가 될 만한가: 글자가 충분하고 문단이 세 개 이상
+  function rootOk(el) {
+    if (!el || el.closest(SKIP) || textLen(el) < 300) return false;
+    let n = 0;
+    for (const q of el.querySelectorAll(LEAF)) if (isLeaf(q) && textLen(q) >= 20 && ++n >= 3) return true;
+    return false;
+  }
+  function savedRoot() {
+    let sel = null;
+    try { sel = localStorage.getItem(ROOT_KEY); } catch {}
+    if (!sel) return null;
+    try { const el = document.querySelector(sel); return el && textLen(el) >= 50 ? el : null; } catch { return null; }
+  }
+  function siteRoot() {
+    for (const sel of SITE_ROOTS) {
+      const els = [...document.querySelectorAll(sel)].filter(rootOk);
+      if (els.length === 1) return els[0];
+    }
+    const arts = [...document.querySelectorAll("article")].filter(rootOk);
+    return arts.length === 1 ? arts[0] : null; // 글 목록 페이지처럼 여러 개면 판단하지 않는다
+  }
+  let rootHow = "score"; // saved | site | score — 어떻게 골랐는지(패널 안내용)
   function findRoot() {
+    const a = savedRoot();
+    if (a) { rootHow = "saved"; return a; }
+    const b = siteRoot();
+    if (b) { rootHow = "site"; return b; }
+    rootHow = "score";
+    return scoreRoot();
+  }
+  function scoreRoot() {
     const scores = new Map();
     const add = (node, v) => { if (node && node !== document.documentElement) scores.set(node, (scores.get(node) || 0) + v); };
+    // 점수는 네 단계 위 상자까지, 위로 갈수록 줄여서 올린다(1 → 1/2 → 1/3 → 1/4).
+    // 두 단계까지만 올리면 여러 겹 목록으로 된 글(항목이 ul>li>ul>li…)은 점수가 작은 목록들에 흩어져,
+    // 혼자 긴 코드 블록 하나가 본문으로 뽑혔다(gmlwjd9405.github.io 의 HTTP 헤더 글에서 확인).
+    // 코드(pre)는 설명하는 글이 아니라 예시라 점수를 낮게 친다
     for (const el of document.body.querySelectorAll(LEAF)) {
       if (el.closest(SKIP) || !isLeaf(el)) continue;
-      const len = textLen(el);
+      const len = textLen(el) * (el.tagName === "PRE" ? 0.3 : 1);
       if (len < 20) continue;
-      add(el.parentElement, len);
-      add(el.parentElement?.parentElement, len / 2);
+      let node = el.parentElement;
+      for (let d = 1; d <= 4 && node; d++, node = node.parentElement) add(node, len / d);
     }
     let best = null, bestScore = 0;
     for (const [el, s] of scores) {
@@ -94,6 +143,11 @@
 
   // 본문 안의 문단: 안에 다른 덩어리가 없는 가장 안쪽 덩어리. 코드(pre)는 통째로 한 문단
   function collectParagraphs(root) {
+    // 문단 하나를 본문으로 직접 고른 경우: 그 문단 자체가 유일한 문단이다
+    if (root.matches?.(LEAF) && isLeaf(root)) {
+      const text = root.tagName === "PRE" ? root.innerText.trim() : tidy(root.innerText);
+      return text.length >= 2 ? [{ p: 1, el: root, text }] : [];
+    }
     const out = [];
     for (const el of root.querySelectorAll(LEAF)) {
       if (el.closest(SKIP) && !root.closest(SKIP)) continue;
@@ -473,6 +527,13 @@
       color: #fff; font: 600 11px/20px "Pretendard Variable", "Pretendard", "Malgun Gothic", sans-serif; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
     .badge:hover { transform: scale(1.1); }
     .root-box { position: absolute; border: 2px dashed #f59e0b; border-radius: 6px; background: rgba(245, 158, 11, .06); }
+    .pick-box { position: absolute; pointer-events: none; border: 2px solid #6366f1; border-radius: 6px; background: rgba(99, 102, 241, .08); box-shadow: 0 0 0 9999px rgba(15, 23, 42, .18); }
+    .pick-box[hidden], .pick-bar[hidden] { display: none; }
+    .pick-bar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; pointer-events: auto;
+      background: #1f2328; color: #fff; padding: 8px 10px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.35); font: 13px/1.4 "Pretendard Variable", "Pretendard", "Malgun Gothic", sans-serif; max-width: calc(100vw - 24px); }
+    .pick-bar span { color: #cbd5e1; margin-right: 4px; }
+    .pick-bar button { border: 1px solid #4b5563; background: #2a2f37; color: #fff; border-radius: 8px; padding: 4px 10px; cursor: pointer; font: inherit; }
+    .pick-bar button.primary { background: #6366f1; border-color: #6366f1; }
     /* 접힌 패널 = 오른쪽 위 작은 요약 상자. 누르면 전체 패널이 펼쳐진다 */
     .mini { position: fixed; top: 12px; right: 12px; pointer-events: auto; cursor: pointer; max-width: min(360px, calc(100vw - 24px));
       background: #fff; color: #1f2328; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,.15);
@@ -808,6 +869,106 @@
     clearTimeout(flashElement.t);
     flashElement.t = setTimeout(() => CSS.highlights.delete("nl-ov-flash"), 1300);
   }
+  // ── 본문 직접 고르기 ──
+  // 마우스를 올리거나(손가락은 누르면) 그 자리 상자에 테두리가 생긴다. ↑ 로 더 큰 상자, ↓ 로 다시 작은 상자. 「이 상자로」 로 정한다
+  let pick = null; // { cur, trail: [] }
+  const pickBox = h("div", { class: "pick-box", hidden: true });
+  const pickInfo = h("span", {});
+  const pickBar = h("div", { class: "pick-bar", hidden: true },
+    h("b", {}, "본문 고르기"), pickInfo,
+    h("button", { onclick: () => pickMove(1) }, "↑ 더 큰 상자"),
+    h("button", { onclick: () => pickMove(-1) }, "↓ 작은 상자"),
+    h("button", { class: "primary", onclick: () => pick?.cur && pickDone(pick.cur) }, "이 상자로"),
+    h("button", { onclick: endPick }, "취소"));
+  shadow.append(pickBox, pickBar);
+  const blockOf = (node) => {
+    let el = node?.nodeType === 1 ? node : node?.parentElement;
+    while (el && el !== document.body && !(el.matches(BLOCK) || getComputedStyle(el).display === "block")) el = el.parentElement;
+    return el && el !== document.body && el !== document.documentElement ? el : null;
+  };
+  function pickShow(el) {
+    if (!pick) return;
+    pick.cur = el;
+    if (!el) { pickBox.hidden = true; pickInfo.textContent = " 상자에 마우스를 올리거나 눌러 보세요"; return; }
+    const r = el.getBoundingClientRect();
+    Object.assign(pickBox.style, { left: `${r.left + scrollX - 3}px`, top: `${r.top + scrollY - 3}px`, width: `${r.width + 6}px`, height: `${r.height + 6}px` });
+    pickBox.hidden = false;
+    pickInfo.textContent = ` 글자 ${textLen(el).toLocaleString()}자 · 문단 ${collectParagraphs(el).length}개`;
+  }
+  function pickMove(dir) {
+    if (!pick?.cur) return;
+    if (dir > 0) { const up = pick.cur.parentElement; if (up && up !== document.body && up !== document.documentElement) { pick.trail.push(pick.cur); pickShow(up); } }
+    else if (pick.trail.length) pickShow(pick.trail.pop());
+  }
+  const pickOver = (e) => { if (pick && e.pointerType !== "touch" && !e.composedPath().includes(host)) { pick.trail = []; pickShow(blockOf(e.target)); } };
+  const pickClick = (e) => {
+    if (!pick || e.composedPath().includes(host)) return;
+    e.preventDefault(); e.stopPropagation(); // 고르는 동안에는 링크를 눌러도 이동하지 않는다
+    pick.trail = []; pickShow(blockOf(e.target));
+  };
+  const pickKey = (e) => {
+    if (!pick) return;
+    if (e.key === "Escape") { e.preventDefault(); endPick(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); pickMove(1); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); pickMove(-1); }
+    else if (e.key === "Enter" && pick.cur) { e.preventDefault(); pickDone(pick.cur); }
+  };
+  function startPick() {
+    hidePop(); closeSummary();
+    if (!COMPACT) steps.open = false;
+    setMin(true);
+    pick = { cur: null, trail: [] };
+    pickBar.hidden = false;
+    pickShow(state.root && state.root !== document.body ? state.root : null);
+    addEventListener("pointerover", pickOver, true);
+    addEventListener("click", pickClick, true);
+    addEventListener("keydown", pickKey, true);
+  }
+  function endPick() {
+    pick = null; pickBox.hidden = true; pickBar.hidden = true;
+    removeEventListener("pointerover", pickOver, true);
+    removeEventListener("click", pickClick, true);
+    removeEventListener("keydown", pickKey, true);
+  }
+  // 고른 상자를 다시 찾을 주소(CSS 선택자): id 가 있으면 그것, 없으면 태그·클래스로 위에서부터 이어 붙이고 페이지에 하나뿐인지 확인한다
+  function selectorOf(el) {
+    const parts = [];
+    for (let n = el; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+      if (n.id && /^[A-Za-z][\w-]*$/.test(n.id)) { parts.unshift(`#${n.id}`); break; }
+      const cls = [...n.classList].filter((c) => /^[A-Za-z][\w-]*$/.test(c)).slice(0, 3).map((c) => `.${c}`).join("");
+      let part = n.tagName.toLowerCase() + cls;
+      const sibs = n.parentElement ? [...n.parentElement.children].filter((x) => x.tagName === n.tagName) : [];
+      if (sibs.length > 1) part += `:nth-of-type(${sibs.indexOf(n) + 1})`;
+      parts.unshift(part);
+      const sel = parts.join(" > ");
+      try { if (document.querySelectorAll(sel).length === 1) return sel; } catch {}
+    }
+    const sel = parts.join(" > ");
+    try { return document.querySelectorAll(sel).length === 1 ? sel : null; } catch { return null; }
+  }
+  function pickDone(el) {
+    endPick();
+    const sel = selectorOf(el);
+    if (sel) try { localStorage.setItem(ROOT_KEY, sel); } catch {}
+    rootHow = "saved";
+    setRoot(el);
+    setMsg(copyMsg, sel ? "본문 상자를 바꿨습니다. 이 사이트의 다른 글에서도 같은 자리를 본문으로 씁니다." : "본문 상자를 바꿨습니다(이 상자는 다시 찾을 주소를 만들지 못해 이번에만 씁니다).");
+  }
+  // 본문을 바꾸면 문단 번호가 달라지므로, 지금 표시·설명은 구절과 앞뒤 글자로 새 본문에 다시 붙인다
+  function setRoot(el) {
+    const had = hasData();
+    const data = had ? serialize() : null;
+    state.root = el;
+    state.paras = collectParagraphs(el);
+    if (had) {
+      state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.trs = new Map();
+      apply(data, { restored: true });
+      save();
+    } else { inlineSig = ""; paint(); drawLayer(); renderResult(); }
+    renderFound();
+    showRoot();
+  }
+
   function showRoot() {
     if (!state.root) return;
     state.root.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -867,6 +1028,10 @@
         h("button", { class: "act", title: "요청문 복사·AI 답 붙여 넣기·내보내기", onclick: stop(() => setMin(false)) }, "AI 답 넣기")) : "");
   }
   const foundMsg = h("p", { class: "muted" });
+  const resetRootBtn = h("button", { hidden: true, title: "이 사이트에 기억한 본문 상자를 지우고 자동으로 고릅니다", onclick: () => {
+    try { localStorage.removeItem(ROOT_KEY); } catch {}
+    setRoot(findRoot());
+  } }, "자동 고르기로 되돌리기");
   const copyMsg = h("p", { class: "msg" });
   const answer = h("textarea", { placeholder: "AI 가 돌려준 답(JSON)을 그대로 붙여 넣으세요" });
   const applyMsg = h("p", { class: "msg" });
@@ -880,7 +1045,9 @@
     h("h3", {}, "1. 이 페이지 본문으로 요청문 만들기"), foundMsg,
     h("div", { class: "row" },
       h("button", { class: "primary", onclick: copyPrompt }, "요청문 복사"),
-      h("button", { onclick: showRoot }, "본문 영역 보기")),
+      h("button", { onclick: showRoot }, "본문 영역 보기"),
+      HOST ? null : h("button", { title: "본문으로 쓸 상자를 직접 고릅니다. 고른 상자는 이 사이트에 기억합니다", onclick: startPick }, "본문 다시 고르기"),
+      resetRootBtn),
     copyMsg,
     h("h3", {}, "2. 쓰는 AI 에 붙여 넣고, 받은 답을 여기에"), answer,
     h("div", { class: "row" }, h("button", { class: "primary", onclick: () => applyText(answer.value) }, "적용")),
@@ -1848,9 +2015,14 @@
   state.root = HOST?.root || findRoot();
   state.paras = HOST?.paragraphs || collectParagraphs(state.root);
   const cut = (s) => (s.length > 36 ? `${s.slice(0, 36)}…` : s);
-  foundMsg.textContent = state.paras.length
-    ? `본문 문단 ${state.paras.length}개를 찾았습니다.${HOST ? "" : " 블로그 옆 메뉴·댓글은 뺐습니다."}\n첫 문단: ${cut(state.paras[0].text)}\n끝 문단: ${cut(state.paras[state.paras.length - 1].text)}`
-    : "본문을 찾지 못했습니다.";
+  function renderFound() {
+    const how = HOST ? "" : { saved: " (이 사이트에서 직접 고른 본문)", site: " (사이트가 표시한 본문)", score: " (글자 분포로 짐작한 본문 — 틀리면 「본문 다시 고르기」)" }[rootHow];
+    foundMsg.textContent = state.paras.length
+      ? `본문 문단 ${state.paras.length}개를 찾았습니다.${how}\n첫 문단: ${cut(state.paras[0].text)}\n끝 문단: ${cut(state.paras[state.paras.length - 1].text)}`
+      : "본문을 찾지 못했습니다. 「본문 다시 고르기」로 직접 골라 주세요.";
+    resetRootBtn.hidden = HOST || rootHow !== "saved";
+  }
+  renderFound();
   autoPlace();
   placePanel();
   if (COMPACT) setMin(true);

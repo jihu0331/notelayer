@@ -180,7 +180,8 @@
     // 다른 사이트가 띄운 작은 저장 창에서는 크롬이 파일 고르는 창도 열지 않고 바로 「취소」를 돌려준다(폴더 고르기와 같은 제약).
     // 새 탭에서 고르게 하고, 불러온 결과는 알림 통로로 받아 이 창과 연결된 페이지에 반영한다
     if (IN_POPUP) {
-      window.open("store.html?import=1", "_blank", "noopener");
+      const forPage = current ? `#for=${encodeURIComponent(JSON.stringify({ key: current.key, title: current.title }))}` : "";
+      window.open(`store.html?import=1${forPage}`, "_blank", "noopener");
       status("새 탭에서 파일을 고르세요. 불러오면 이 창과 연결된 페이지에 바로 반영됩니다.");
       return;
     }
@@ -188,18 +189,53 @@
     try { $("importFile").click(); } catch (err) { status(`파일 고르는 창을 열지 못했습니다: ${err?.message || err}`, true); }
   };
   $("importFile").oncancel = () => status("파일 고르기가 취소됐습니다.");
+  // 불러오기를 시작한 페이지: 작은 저장 창이면 연결된 페이지, 새 탭이면 작은 창이 주소 #for= 로 넘긴 페이지
+  const target = current || (() => {
+    try { const j = JSON.parse(decodeURIComponent((/[#&]for=([^&]*)/.exec(location.hash) || [])[1] || "")); return httpUrl(j?.key) ? { key: j.key, title: String(j.title || "") } : null; } catch { return null; }
+  })();
+  // 다른 페이지의 기록: 「그 페이지 기록으로 저장」 또는 「이 페이지에 붙이기」 를 고르게 한다
+  const pending = [];
+  function renderChoices() {
+    $("choices").hidden = !pending.length;
+    $("choiceList").replaceChildren(...pending.map((rec) => el("div", { class: "choice" },
+      el("div", {}, "이 파일은 ", el("b", {}, `「${rec.title || rec.key}」`), " 페이지의 기록입니다."),
+      el("div", { class: "url" }, rec.url || rec.key),
+      el("div", { class: "muted" }, `지금 페이지: 「${target.title || target.key}」`),
+      el("div", { class: "row" },
+        el("button", { onclick: () => resolve(rec, false) }, "그 페이지 기록으로 저장"),
+        el("button", { class: "primary", title: "주소가 달라도 같은 글이면 이 페이지 기록으로 옮겨 바로 칠합니다. 표시 자리는 글자로 다시 찾습니다", onclick: () => resolve(rec, true) }, "이 페이지에 붙이기"),
+        el("button", { onclick: () => { pending.splice(pending.indexOf(rec), 1); renderChoices(); status("불러오지 않았습니다."); } }, "취소")))));
+  }
+  async function resolve(rec, attach) {
+    pending.splice(pending.indexOf(rec), 1);
+    const out = attach ? { ...rec, key: target.key, url: httpUrl(target.key) || target.key, title: target.title || rec.title, savedAt: Date.now() } : rec;
+    await putPage({ ...out, data: clean(out.data), savedAt: Number(out.savedAt) || Date.now() });
+    announce([out.key]);
+    status(attach ? "이 페이지 기록으로 붙였습니다. 열려 있는 페이지에 바로 칠합니다." : `「${rec.title || rec.key}」 페이지 기록으로 저장했습니다. 그 페이지를 열고 즐겨찾기를 누르면 칠해집니다.`);
+    renderChoices(); render();
+  }
+  // 불러온 기록을 지금 페이지(작은 저장 창이면 그 페이지)와 다른 탭의 작은 저장 창들에 알린다
+  function announce(keys) {
+    if (current && keys.includes(current.key) && window.opener && !window.opener.closed) {
+      try { window.opener.postMessage({ nl: "store", type: "updated", id: 0 }, current.origin); } catch {}
+    }
+    try { bc?.postMessage({ type: "imported", keys }); } catch {}
+  }
+
   $("importFile").onchange = async (e) => {
-    let n = 0, here = false;
+    let n = 0, here = false, other = 0;
     const keys = [];
     for (const f of e.target.files) {
       try {
         const rec = JSON.parse(await f.text());
         if (typeof rec?.key !== "string" || !httpUrl(rec.key) || typeof rec.data !== "object") continue;
+        // 불러오기를 시작한 페이지가 있고 그 페이지 기록이 아니면 바로 넣지 않고 고르게 한다
+        if (target && rec.key !== target.key) { pending.push(rec); other++; continue; }
         const old = await getPage(rec.key);
         if (!old || (old.savedAt || 0) <= (rec.savedAt || 0)) {
           await putPage({ ...rec, data: clean(rec.data), savedAt: Number(rec.savedAt) || Date.now() });
           n++; keys.push(rec.key);
-          if (current && rec.key === current.key) here = true;
+          if (target && rec.key === target.key) here = true;
         }
       } catch {}
     }
@@ -208,11 +244,12 @@
     // 지금 연결된 페이지의 기록을 불러왔으면 그 페이지에 알려 바로 다시 칠하게 한다.
     // 페이지는 처음 연결될 때 한 번만 저장본을 꺼내므로, 알리지 않으면 저장 창에는 「저장됨」인데 페이지에는 아무것도 안 보였다
     const live = here && window.opener && !window.opener.closed;
-    if (live) try { window.opener.postMessage({ nl: "store", type: "updated", id: 0 }, current.origin); } catch {}
-    // 새 탭에서 불러왔으면 작은 저장 창들에 알린다(그 창이 자기 페이지에 칠하게 한다)
-    if (keys.length) try { bc?.postMessage({ type: "imported", keys }); } catch {}
-    status(`파일 ${total}개 중 ${n}개 페이지의 표시를 불러왔습니다${n < total ? "(notelayer 저장 파일이 아니거나 더 새 기록이 이미 있는 것은 건너뛰었습니다)" : ""}.`
-      + (live ? " 지금 연결된 페이지에 바로 칠했습니다." : IMPORT_TAB && n ? " 열려 있는 저장 창의 페이지에는 바로 칠했습니다. 이 탭은 닫아도 됩니다." : n ? " 그 페이지를 열고 「이 페이지 위에 표시하기」를 누르면 칠해집니다." : ""), n === 0);
+    if (keys.length) announce(keys);
+    renderChoices();
+    if (other && !n) status(`고른 파일은 지금 페이지가 아닌 다른 페이지의 기록입니다. 아래에서 어떻게 할지 골라 주세요.`);
+    else status(`파일 ${total}개 중 ${n}개 페이지의 표시를 불러왔습니다${n + other < total ? "(notelayer 저장 파일이 아니거나 더 새 기록이 이미 있는 것은 건너뛰었습니다)" : ""}.`
+      + (live ? " 지금 연결된 페이지에 바로 칠했습니다." : IMPORT_TAB && here ? " 열려 있는 페이지에 바로 칠했습니다. 이 탭은 닫아도 됩니다." : n ? " 그 페이지를 열고 「이 페이지 위에 표시하기」를 누르면 칠해집니다." : "")
+      + (other ? ` 다른 페이지의 기록 ${other}개는 아래에서 골라 주세요.` : ""), n === 0 && !other);
     render();
   };
 
