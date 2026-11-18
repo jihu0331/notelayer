@@ -8,28 +8,10 @@
 //       그래서 다른 사이트가 이 창을 열어도 남의 페이지 기록은 꺼내 가지 못한다. 받은 내용은 글자로만 그린다.
 (() => {
   const $ = (id) => document.getElementById(id);
-  const MAX_BYTES = 4 * 1024 * 1024;
-
-  // ── 이 브라우저의 notelayer 칸 ──
-  let dbp = null;
-  const db = () => (dbp ??= new Promise((ok, no) => {
-    const r = indexedDB.open("notelayer-store", 1);
-    r.onupgradeneeded = () => { r.result.createObjectStore("pages", { keyPath: "key" }); r.result.createObjectStore("meta"); };
-    r.onsuccess = () => ok(r.result);
-    r.onerror = () => no(r.error);
-  }));
-  const req = (r) => new Promise((ok, no) => { r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); });
-  const os = async (name, mode = "readonly") => (await db()).transaction(name, mode).objectStore(name);
-  const getPage = async (key) => req((await os("pages")).get(key));
-  const putPage = async (rec) => req((await os("pages", "readwrite")).put(rec));
-  const delPage = async (key) => req((await os("pages", "readwrite")).delete(key));
-  const allPages = async () => req((await os("pages")).getAll());
-  const getMeta = async (k) => req((await os("meta")).get(k));
-  const putMeta = async (k, v) => req((await os("meta", "readwrite")).put(v, k));
-  const delMeta = async (k) => req((await os("meta", "readwrite")).delete(k));
+  const S = window.NL_STORAGE;
+  const { getPage, putPage, delPage, allPages, getMeta, putMeta, delMeta, canFolder, fileName, readFile, removeFile, httpUrl, clean, counts } = S;
 
   // ── 내 PC 폴더 ──
-  const canFolder = "showDirectoryPicker" in window;
   // 블로그 같은 다른 사이트가 띄운 작은 저장 창(팝업) 안에서는 크롬이 폴더 고르는 창을 열지 않고 곧바로 「취소」를 돌려준다
   // (실제 크롬 157 에서 확인: 팝업 0.04초 만에 취소, 일반 탭은 정상). 그래서 폴더 고르기·다시 허용은 저장 창을 일반 탭으로 열어 거기서 하고,
   // 고른 결과는 같은 출처끼리 쓰는 알림 통로(BroadcastChannel)로 작은 저장 창에 알린다
@@ -38,40 +20,14 @@
   const bc = "BroadcastChannel" in window ? new BroadcastChannel("notelayer-store") : null;
   let folderState = "none"; // none | granted | prompt
   async function folder(ask = false) {
-    const dir = await getMeta("dir").catch(() => null);
-    if (!dir) { folderState = "none"; return null; }
-    let p = await dir.queryPermission({ mode: "readwrite" });
-    if (p !== "granted" && ask) p = await dir.requestPermission({ mode: "readwrite" });
-    folderState = p === "granted" ? "granted" : "prompt";
-    return p === "granted" ? dir : null;
+    const r = await S.folder(ask);
+    folderState = r.state;
+    return r.dir;
   }
-  function hash(s) { let h = 2166136261; for (const c of s) { h ^= c.codePointAt(0); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); }
-  // 파일 이름은 주소로 정해진다. 다른 PC 에서 같은 폴더를 연결하면 같은 이름으로 찾는다. 물음표 뒤는 이름에 넣지 않고 끝의 짧은 해시로만 구분한다
-  function fileName(key) {
-    const u = new URL(key);
-    const slug = `${u.host}${u.pathname}`.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 80);
-    return `${slug}-${hash(key)}.notelayer.json`;
-  }
-  async function writeFile(dir, rec) {
-    const w = await (await dir.getFileHandle(fileName(rec.key), { create: true })).createWritable();
-    await w.write(JSON.stringify(rec, null, 1));
-    await w.close();
-  }
-  async function readFile(dir, key) {
-    try { return JSON.parse(await (await (await dir.getFileHandle(fileName(key))).getFile()).text()); } catch { return null; }
-  }
-  async function removeFile(dir, key) { try { await dir.removeEntry(fileName(key)); } catch {} }
 
   // ── 표시 층과 주고받기 ──
-  let current = null; // { key, url, title }
+  let current = null; // { key, url, title, origin }
   const sameOrigin = (key, origin) => { try { return new URL(key).origin === origin; } catch { return false; } };
-  const httpUrl = (u) => { try { const x = new URL(u); return x.protocol === "https:" || x.protocol === "http:" ? x.href : null; } catch { return null; } };
-  function clean(data) {
-    const s = JSON.stringify(data ?? null);
-    if (s.length > MAX_BYTES) throw new Error("저장할 내용이 너무 큽니다");
-    return JSON.parse(s);
-  }
-  const counts = (data) => ({ marks: Array.isArray(data?.marks) ? data.marks.length : 0, boxes: Array.isArray(data?.boxes) ? data.boxes.length : 0 });
 
   // 로컬 시험 서버(localhost)에서만: 시험용 즐겨찾기가 표시 층 코드를 달라고 하면 이 창이 자기 서버에서 읽어 넘겨준다.
   // 블로그 페이지가 localhost 에서 직접 파일을 받으면 크롬이 사이트마다 「로컬 네트워크 액세스」 허락을 요구하지만,
@@ -95,32 +51,10 @@
     try {
       if (d.type === "hello") {
         // 연결된 다음 다시 오는 인사(같은 페이지가 되풀이해 보낸 것)는 연결을 바꾸지 않고 답만 한다
-        current ??= { key: d.key, url: httpUrl(d.key) || d.key, title: String(d.title || "").slice(0, 300) };
-        reply({ type: "ready", folder: !!(await folder()) });
-        render();
-      } else if (d.type === "load") {
-        let rec = await getPage(d.key), from = "browser";
-        if (!rec) {
-          const dir = await folder();
-          const f = dir && await readFile(dir, d.key);
-          if (f && f.key === d.key) { rec = f; from = "folder"; await putPage(rec); }
-        }
-        reply({ type: "loaded", record: rec ? { data: rec.data, savedAt: rec.savedAt } : null, from });
-        render();
-      } else if (d.type === "save") {
-        const rec = { v: 1, key: d.key, url: httpUrl(d.key) || d.key, title: String(d.title || "").slice(0, 300), savedAt: Date.now(),
-          data: clean(d.data), paragraphs: Array.isArray(d.paragraphs) ? clean(d.paragraphs.filter((t) => typeof t === "string")) : [] };
-        await putPage(rec);
-        let file = false;
-        const dir = await folder();
-        if (dir) try { await writeFile(dir, rec); file = true; } catch {}
-        reply({ type: "saved", at: rec.savedAt, file });
-        render();
-      } else if (d.type === "delete") {
-        await delPage(d.key);
-        const dir = await folder();
-        if (dir) await removeFile(dir, d.key);
-        reply({ type: "deleted" });
+        current ??= { key: d.key, url: httpUrl(d.key) || d.key, title: String(d.title || "").slice(0, 300), origin: e.origin };
+      }
+      if (["hello", "load", "save", "delete"].includes(d.type)) {
+        reply(await S.handle(d));
         render();
       }
     } catch (err) {
@@ -237,15 +171,8 @@
     }
     render();
   }
-  // 폴더를 처음 연결하거나 다시 허용하면, 이 브라우저에만 있던 기록을 폴더에도 써 둔다
-  async function syncFolder() {
-    const dir = await folder();
-    if (!dir) return;
-    for (const rec of await allPages()) {
-      const f = await readFile(dir, rec.key);
-      if (!f || (f.savedAt || 0) < rec.savedAt) await writeFile(dir, rec).catch(() => {});
-    }
-  }
+  // 폴더를 처음 연결하거나 다시 허용하면, 이 브라우저에만 있던 기록을 폴더에도 써 둔다(PDF 노트의 원본도 함께)
+  const syncFolder = () => S.syncFolder();
 
   $("importBtn").onclick = () => {
     status("파일 고르는 창을 여는 중… (안 보이면 다른 창 뒤에 열렸을 수 있습니다)");
@@ -253,18 +180,27 @@
   };
   $("importFile").oncancel = () => status("파일 고르기가 취소됐습니다.");
   $("importFile").onchange = async (e) => {
-    let n = 0;
+    let n = 0, here = false;
     for (const f of e.target.files) {
       try {
         const rec = JSON.parse(await f.text());
         if (typeof rec?.key !== "string" || !httpUrl(rec.key) || typeof rec.data !== "object") continue;
         const old = await getPage(rec.key);
-        if (!old || (old.savedAt || 0) <= (rec.savedAt || 0)) { await putPage({ ...rec, data: clean(rec.data), savedAt: Number(rec.savedAt) || Date.now() }); n++; }
+        if (!old || (old.savedAt || 0) <= (rec.savedAt || 0)) {
+          await putPage({ ...rec, data: clean(rec.data), savedAt: Number(rec.savedAt) || Date.now() });
+          n++;
+          if (current && rec.key === current.key) here = true;
+        }
       } catch {}
     }
     const total = e.target.files.length;
     e.target.value = "";
-    status(`파일 ${total}개 중 ${n}개 페이지의 표시를 불러왔습니다${n < total ? "(notelayer 저장 파일이 아니거나 더 새 기록이 이미 있는 것은 건너뛰었습니다)" : ""}.`, n === 0);
+    // 지금 연결된 페이지의 기록을 불러왔으면 그 페이지에 알려 바로 다시 칠하게 한다.
+    // 페이지는 처음 연결될 때 한 번만 저장본을 꺼내므로, 알리지 않으면 저장 창에는 「저장됨」인데 페이지에는 아무것도 안 보였다
+    const live = here && window.opener && !window.opener.closed;
+    if (live) try { window.opener.postMessage({ nl: "store", type: "updated", id: 0 }, current.origin); } catch {}
+    status(`파일 ${total}개 중 ${n}개 페이지의 표시를 불러왔습니다${n < total ? "(notelayer 저장 파일이 아니거나 더 새 기록이 이미 있는 것은 건너뛰었습니다)" : ""}.`
+      + (live ? " 지금 연결된 페이지에 바로 칠했습니다." : n ? " 그 페이지를 열고 「이 페이지 위에 표시하기」를 누르면 칠해집니다." : ""), n === 0);
     render();
   };
 

@@ -3,7 +3,7 @@
 window.NL_TEMPLATES = {
   "tech": {
     "name": "기술 문서 입문",
-    "reader": "네트워크를 깊게 배운 적 없는 주니어 개발자",
+    "reader": "이 분야를 처음 배우는 개발자·학생 (기초는 알지만 이 문서의 주제는 처음)",
     "hand": false,
     "marks": {
       "circle": "핵심 용어",

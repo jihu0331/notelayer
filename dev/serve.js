@@ -19,12 +19,12 @@ const ROOT = path.resolve(__dirname, "..");
 const PORT = Number(process.argv[2]) || 5199;
 const TYPES = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
-  ".png": "image/png",
+  ".png": "image/png", ".pdf": "application/pdf",
 };
 const NO_CACHE = { "cache-control": "no-store" }; // 고친 파일이 바로 보이게
 
 // 내줄 파일 목록(이름에 점으로 시작하는 조각·상위 폴더 이동이 들어갈 수 없는 모양만)
-const SERVE = /^\/(?:index\.html|app\.js|app\.css|import\.js|prompt\.js|templates\.js|overlay\.js|store\.html|store\.js|documents\/[A-Za-z0-9_-]+\.js|docs\/[A-Za-z0-9_-]+\.png)$/;
+const SERVE = /^\/(?:index\.html|app\.js|app\.css|import\.js|prompt\.js|templates\.js|overlay\.js|store\.html|store\.js|storage\.js|vendor\.js|pdf\.html|pdfnote\.js|documents\/[A-Za-z0-9_-]+\.js|docs\/[A-Za-z0-9_-]+\.(?:png|pdf))$/;
 
 http.createServer((req, res) => {
   let rel;

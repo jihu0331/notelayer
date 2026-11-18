@@ -57,23 +57,12 @@
   };
 
   // ── 파일에서 글자 뽑기 (브라우저 안에서만 읽는다) ──
-  const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-  const PDFJS_WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-  const MAMMOTH = "https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js";
-  const loaded = {};
-  function loadScript(src) {
-    loaded[src] ??= new Promise((res, rej) => {
-      const s = document.createElement("script");
-      s.src = src; s.onload = res; s.onerror = () => rej(new Error("읽기 도구를 내려받지 못했습니다(인터넷 연결 확인)"));
-      document.head.appendChild(s);
-    });
-    return loaded[src];
-  }
+  // 이 판(3.11)은 조작된 글꼴이 든 PDF 를 열면 그 안의 코드가 실행되는 취약점(CVE-2024-4367)이 있다. 모든 getDocument 에
+  // isEvalSupported: false 를 넣어 막는다(공식 권고). 코드가 실행되면 이 주소에 저장한 다른 메모까지 읽힐 수 있다
+  // 외부 도구(pdf.js·mammoth)는 vendor.js 가 해시로 확인하며 불러온다
   async function pdfText(buf) {
-    await loadScript(PDFJS);
-    const lib = window.pdfjsLib;
-    lib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
-    const pdf = await lib.getDocument({ data: buf }).promise;
+    const lib = await window.NL_VENDOR.pdfjs();
+    const pdf = await lib.getDocument({ data: buf, isEvalSupported: false }).promise;
     const paras = [];
     for (let n = 1; n <= pdf.numPages; n++) {
       const content = await (await pdf.getPage(n)).getTextContent();
@@ -105,8 +94,8 @@
     return paras.join("\n\n");
   }
   async function docxText(buf) {
-    await loadScript(MAMMOTH);
-    return (await window.mammoth.extractRawText({ arrayBuffer: buf })).value;
+    const mammoth = await window.NL_VENDOR.mammoth();
+    return (await mammoth.extractRawText({ arrayBuffer: buf })).value;
   }
   async function readFile(file) {
     const msg = $("ndFileMsg");
