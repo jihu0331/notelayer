@@ -17,8 +17,10 @@
   const LOCAL = typeof HOST?.request === "function"; // 저장 창 대신 같은 주소의 저장 코드를 바로 부른다
   // 작은 창이 기본인 화면(PDF 노트): 큰 패널을 띄우지 않고 작은 창에서 요약 보기·수정 켜고 끄기를 한다.
   // 설명·번역은 문단 바로 아래에 보이고, 수정 모드에서는 그 자리에서 바로 고친다
-  const COMPACT = !!HOST?.compact;
-  const INLINE_ONLY = HOST?.inline === false ? "side" : COMPACT ? "inline" : null; // 설명 위치를 화면이 정했으면 바꾸는 단추를 숨긴다
+  // 웹페이지(즐겨찾기)도 PDF 노트와 같이 작은 창이 기본이다. 품는 화면이 compact 를 따로 정하면 그에 따른다
+  const COMPACT = HOST ? !!HOST.compact : true;
+  // 설명 위치를 화면이 정했으면 바꾸는 단추를 숨긴다. 웹페이지는 사이트에 따라 카드를 끼우면 모양이 깨질 수 있어 「옆 패널」 로 바꿀 길을 남긴다
+  const INLINE_ONLY = HOST?.inline === false ? "side" : HOST?.compact ? "inline" : null;
 
   // 표시 색. app.css 의 템플릿 변수와 같은 값이다(그쪽을 고치면 여기도 고친다)
   const MARK_COLORS = {
@@ -494,6 +496,8 @@
     .mini .it.on .lab { background: #fef3c7; box-shadow: inset 0 0 0 1px #f59e0b; }
     .mini-items b { font-weight: 700; }
     .mini.compact { cursor: default; }
+    .mini .x { border: 0; background: none; color: #9ca3af; cursor: pointer; font-size: 13px; padding: 0 2px 0 6px; }
+    .mini .x:hover { color: #111827; }
     .mini.compact:hover { box-shadow: 0 4px 16px rgba(0,0,0,.15); }
     .mini-acts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; padding-top: 6px; border-top: 1px solid #f1f2f4; }
     .mini .act { border: 1px solid #d0d7de; background: #f6f8fa; border-radius: 7px; padding: 2px 9px; font: inherit; cursor: pointer; color: #1f2328; }
@@ -746,6 +750,24 @@
         editField(t.text, "번역을 쓰세요", (v) => state.trs.set(i, { text: v, mine: true })))
         : h("div", {}, t.text));
   }
+  // 웹페이지의 바탕색: 문단에서 위로 올라가며 처음 칠해진 바탕(거의 투명한 것은 건너뛴다). 끝까지 없으면 흰색
+  function bgOf(node) {
+    for (let n = node; n && n.nodeType === 1; n = n.parentElement) {
+      const m = /rgba?\(([^)]+)\)/.exec(getComputedStyle(n).backgroundColor || "");
+      if (!m) continue;
+      const [r, g, b, a = 1] = m[1].split(",").map(Number);
+      if (a > 0.5) return [r, g, b];
+    }
+    return [255, 255, 255];
+  }
+  const isDarkBg = ([r, g, b]) => (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 < 0.5;
+  // 카드 색: 바탕이 어두우면 밝은 글자에 옅게 밝힌 층, 밝으면 짙은 글자에 옅게 어둡힌 층(반투명이라 바탕색이 비친다). PDF 노트도 같은 값을 쓴다
+  function noteVars(node, bg) {
+    const v = isDarkBg(bg)
+      ? { card: "rgba(255,255,255,.06)", line: "rgba(255,255,255,.14)", ink: "#e5e7eb", pre: "rgba(255,255,255,.07)", muted: "#9ca3af", "tr-bar": "rgba(255,255,255,.3)", focus: "rgba(255,255,255,.09)", lift: "40%" }
+      : { card: "rgba(0,0,0,.035)", line: "rgba(0,0,0,.09)", ink: "#1f2328", pre: "rgba(0,0,0,.05)", muted: "#6b7280", "tr-bar": "rgba(0,0,0,.25)", focus: "#fff", lift: "0%" };
+    for (const [k, val] of Object.entries(v)) node.style.setProperty(`--nl-${k}`, val);
+  }
   function renderInline() {
     const { list, trs, edit, sig } = inlineParts();
     if (sig === inlineSig) return; // 내용이 그대로면 손대지 않는다(끼우면 페이지 높이가 바뀌어 다시 그리기가 돌아오므로)
@@ -765,7 +787,7 @@
       sr.append(h("style", {}, INLINE_CSS), ...[g.tr ? inlineTr(g.tr[0], g.tr[1], edit) : null, ...g.boxes.map((b) => inlineCard(b, colors, edit))].filter(Boolean));
       // 품는 화면(PDF 노트)이 자리를 정하면 그쪽에 맡긴다. 아니면 목록 칸·표 칸 안의 문단은 그 칸 안에, 나머지는 문단 바로 뒤에(표·목록 모양을 깨지 않게)
       if (HOST?.insertAfter) HOST.insertAfter(el, box);
-      else if (/^(LI|TD|TH|DT|DD)$/.test(el.tagName)) el.append(box); else el.after(box);
+      else { if (/^(LI|TD|TH|DT|DD)$/.test(el.tagName)) el.append(box); else el.after(box); noteVars(box, bgOf(el)); }
       inlineHosts.push(box);
     }
     HOST?.relayout?.();
@@ -827,7 +849,8 @@
     pill.replaceChildren(
       h("div", { class: "mini-head" }, h("b", {}, "notelayer"),
         h("span", { class: storeLive ? "dot on" : "dot", title: LOCAL ? (storeLive ? "이 PC 에 저장 중" : "저장소를 여는 중") : storeLive ? "저장 창과 연결됨" : "저장 창이 닫혀 있음" }),
-        h("span", { class: "grow" }), COMPACT ? null : h("span", { class: "open" }, "펼치기 ▾")),
+        h("span", { class: "grow" }), COMPACT ? null : h("span", { class: "open" }, "펼치기 ▾"),
+        COMPACT && !HOST ? h("button", { class: "x", title: "닫기(저장한 표시는 남는다). 즐겨찾기 버튼을 다시 누르면 열린다", onclick: stop(destroy) }, "✕") : null),
       h("div", { class: "mini-items" }, hasData()
         ? [item("circle", h("span", { class: "mk mk-key" }, "가"), t.marks.circle, n("circle")),
           item("highlight", h("span", { class: "mk mk-hl" }), t.marks.highlight, n("highlight")),
@@ -1538,8 +1561,8 @@
   function openCard(id) {
     if (COMPACT) {
       const el = inlineEls.get(id);
-      if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); el.focus?.(); }
-      return el || null;
+      if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); el.focus?.(); return el; }
+      if (state.boxMode === "inline") return null;
     }
     if (state.popup) state.popup.focus(); else setMin(false);
     if (tab !== "boxes") { tab = "boxes"; renderResult(); }
@@ -1831,6 +1854,8 @@
   autoPlace();
   placePanel();
   if (COMPACT) setMin(true);
+  // 웹페이지: 본문 바탕이 어두운 사이트면 작은 창·패널·요약을 어둡게(PDF 노트는 자기 테마 단추가 정한다)
+  if (!HOST) host.setAttribute("data-theme", isDarkBg(bgOf(state.root)) ? "dark" : "light");
   addEventListener("scroll", onScroll, { capture: true, passive: true });
   addEventListener("resize", onResize);
   addEventListener("pagehide", onPageHide);
@@ -1859,6 +1884,7 @@
     // 버튼을 다시 누르면: 저장 창이 닫혀 있으면 다시 열고 패널을 보이고, 아니면 패널을 접고 편다
     toggle: () => {
       if (!LOCAL && BASE && (!conn.win || conn.win.closed)) { openStore(); setMin(false); return; }
+      if (COMPACT) { host.style.display = host.style.display === "none" ? "" : "none"; return; }
       if (state.popup) state.popup.focus(); else setMin(!panel.hasAttribute("data-min"));
     },
     apply: applyText,
