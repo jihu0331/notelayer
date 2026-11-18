@@ -259,28 +259,33 @@
     const pagesEl = $("pages");
     const first = await pdf.getPage(1);
     const w1 = first.getViewport({ scale: 1 }).width;
-    // 오른쪽에 notelayer 패널(약 420px)이 놓일 자리를 남기고 폭을 정한다. 창 크기를 바꿔도 다시 그리지 않는다(표시 자리가 그대로 맞게)
-    const avail = Math.max(480, Math.min(980, innerWidth - 24 - 450));
-    const scale = (innerWidth < 900 ? Math.max(320, innerWidth - 40) : avail) / w1;
+    // 오른쪽 위 작은 창(약 330px) 자리를 남기고 폭을 정한다. 창 크기를 바꿔도 다시 그리지 않는다(표시 자리가 그대로 맞게)
+    const avail = Math.max(480, Math.min(1000, innerWidth - 24 - 350));
+    const scale = (innerWidth < 860 ? Math.max(320, innerWidth - 40) : avail) / w1;
     const paragraphs = [];
     const pages = [];
     for (let n = 1; n <= pdf.numPages; n++) {
       loading(`쪽 펼치는 중… ${n}/${pdf.numPages}`);
       const page = n === 1 ? first : await pdf.getPage(n);
       const vp = page.getViewport({ scale });
+      const W = Math.floor(vp.width), H = Math.floor(vp.height);
       const box = el("div", { class: "page", "data-page": String(n) });
-      box.style.width = `${Math.floor(vp.width)}px`;
-      box.style.height = `${Math.floor(vp.height)}px`;
+      box.style.width = `${W}px`;
+      box.style.height = `${H}px`;
       box.style.setProperty("--scale-factor", String(scale));
-      const canvas = el("canvas");
       const layer = el("div", { class: "textLayer" });
-      box.append(canvas, layer, el("span", { class: "no" }, `${n} / ${pdf.numPages}`));
+      box.append(layer, el("span", { class: "no" }, `${n} / ${pdf.numPages}`));
       pagesEl.append(box);
       const tc = await page.getTextContent();
       const textDivs = [];
       await lib.renderTextLayer({ textContentSource: tc, container: layer, viewport: vp, textDivs }).promise;
-      for (const p of groupParagraphs(tc.items, textDivs, layer)) paragraphs.push({ p: paragraphs.length + 1, ...p });
-      pages.push({ page, vp, box, canvas, drawn: false, task: null });
+      layer.style.width = "100%"; layer.style.height = "100%"; // 문단을 아래로 밀어도 잘리지 않게 쪽 높이를 따라간다
+      const paras = groupParagraphs(tc.items, textDivs, layer);
+      const rec = { n, page, vp, W, H, box, layer, paras, holders: new Map(), segs: [], full: null, blank: null, drawn: false, task: null };
+      // 아주 짧은 조각(한 글자 등)은 요청문 문단에서 빼지만, 아래로 밀 때는 함께 민다
+      for (const p of paras) { if (!p.tiny) paragraphs.push({ p: paragraphs.length + 1, el: p.el, text: p.text }); paraPage.set(p.el, { rec, para: p }); }
+      pages.push(rec);
+      relayout(rec);
     }
     $("loading").hidden = true;
     watchCanvases(pages);
@@ -290,15 +295,110 @@
       pagesEl.before($("loading"));
       return;
     }
-    // 표시 층을 이 화면에 얹는다. 주소(key)는 이 PDF 노트 주소라, 저장 창 목록에도 같은 기록으로 보이고 누르면 여기로 돌아온다
+    // 표시 층을 이 화면에 얹는다. 주소(key)는 이 PDF 노트 주소라, 저장 창 목록에도 같은 기록으로 보이고 누르면 여기로 돌아온다.
+    // 설명·번역은 표시 층이 만들어 insertAfter 로 넘기고, 이 화면이 그 문단 아래를 벌려 자리를 만든다
     const key = keyOf(id);
+    const changed = new Set();
     window.NL_HOST = {
-      kind: "pdf", key, root: pagesEl, paragraphs, inline: false,
+      kind: "pdf", key, root: pagesEl, paragraphs, inline: true, compact: true,
       request: (msg) => (msg?.key === key ? S.handle(msg) : Promise.resolve({ type: "error", message: "다른 문서의 기록은 다루지 않습니다" })),
+      insertAfter: (paraEl, node) => {
+        const at = paraPage.get(paraEl);
+        if (!at) return;
+        let hd = at.rec.holders.get(paraEl);
+        if (!hd) { hd = el("div", { class: "nl-hold" }); at.rec.box.append(hd); at.rec.holders.set(paraEl, hd); holdRec.set(hd, at.rec); holdRO.observe(hd); }
+        hd.append(node);
+        changed.add(at.rec);
+      },
+      // 표시 층이 설명·번역을 다시 그린 다음 부른다. 끼운 것이 있었거나 생긴 쪽만 다시 배치한다
+      relayout: () => { for (const rec of pages) if (rec.holders.size || changed.has(rec)) relayout(rec); changed.clear(); },
     };
     try { await loadScript("overlay.js"); }
     catch (err) { loading(`표시 층을 불러오지 못했습니다: ${err.message}`, true); pagesEl.before($("loading")); return; }
     if (params.get("sample")) applySample(params.get("sample"));
+  }
+
+  // ── 문단 아래 벌리기 ──
+  // 쪽 그림은 한 장으로 그려 두고, 끼울 내용(설명·번역)이 있는 문단 아래 「자를 줄」 에서 쪽을 가로로 나눈다.
+  // 자른 아래쪽은 그림 조각과 글자 층 문단을 함께 끼운 높이만큼 아래로 민다. 글자 노드는 옮기지 않고 보이는 자리만 옮긴다
+  // (글자를 다른 곳으로 옮기면 이미 단 표시의 글자 범위가 풀린다)
+  const paraPage = new Map(); // 문단 요소 → { rec, para }
+  const holdRec = new WeakMap(); // 끼운 자리 → 그 쪽
+  // 끼운 내용의 높이가 바뀌면(설명을 고치는 중 등) 그 쪽을 다시 배치한다
+  const holdRO = new ResizeObserver((entries) => {
+    const recs = new Set(entries.map((e) => holdRec.get(e.target)).filter(Boolean));
+    requestAnimationFrame(() => recs.forEach(relayout));
+  });
+  // 자를 줄: 문단 바로 아래에서 시작해, 다른 문단(두 단 문서의 옆 단 등)을 가로지르지 않고
+  // 그림이 그려졌으면 그림·도표도 가로지르지 않는(한 줄이 고른 색인) 첫 줄. 없으면 쪽 끝
+  function cutFor(rec, para) {
+    const crosses = (y) => rec.paras.some((q) => q.top < y - 0.5 && y + 0.5 < q.bottom);
+    for (let y = Math.ceil(para.bottom) + 1; y < rec.H; y++) {
+      if (crosses(y)) continue;
+      if (rec.blank && !rec.blank(y)) continue;
+      return y;
+    }
+    return rec.H;
+  }
+  function relayout(rec) {
+    for (const [k, hd] of rec.holders) if (!hd.childElementCount) { holdRO.unobserve(hd); hd.remove(); rec.holders.delete(k); }
+    const items = [...rec.holders].map(([k, hd]) => {
+      const para = paraPage.get(k).para;
+      return { para, hd, cut: cutFor(rec, para) };
+    }).sort((a, b) => a.cut - b.cut || a.para.top - b.para.top);
+    // 끼울 자리마다 높이를 재서 쌓는다. 같은 줄에서 자르는 문단이 여럿이면 차례로 쌓는다
+    let off = 0;
+    const shifts = []; // { y, off }: y 아래는 off 만큼 민다
+    for (const it of items) {
+      const w = Math.max(it.para.right - it.para.left, Math.min(rec.W - it.para.left - 12, 420));
+      Object.assign(it.hd.style, { top: `${it.cut + off}px`, left: `${it.para.left}px`, width: `${Math.min(w, rec.W - it.para.left - 6)}px` });
+      off += it.hd.offsetHeight;
+      const last = shifts[shifts.length - 1];
+      if (last && last.y === it.cut) last.off = off; else shifts.push({ y: it.cut, off });
+    }
+    const offAt = (y) => { let o = 0; for (const sh of shifts) if (y >= sh.y - 0.5) o = sh.off; return o; };
+    for (const p of rec.paras) p.el.style.transform = offAt(p.top) ? `translateY(${offAt(p.top)}px)` : "";
+    rec.box.style.height = `${rec.H + off}px`;
+    // 그림 조각: [0, 첫 자를 줄), [자를 줄, 다음 자를 줄) … 마다 캔버스 하나
+    const bounds = [0, ...shifts.map((sh) => sh.y).filter((y) => y < rec.H), rec.H];
+    const want = [];
+    for (let i = 0; i < bounds.length - 1; i++) if (bounds[i + 1] > bounds[i]) want.push({ start: bounds[i], end: bounds[i + 1], off: offAt(bounds[i]) });
+    while (rec.segs.length > want.length) rec.segs.pop().canvas.remove();
+    while (rec.segs.length < want.length) { const c = el("canvas", { class: "seg" }); rec.box.prepend(c); rec.segs.push({ canvas: c }); }
+    want.forEach((w, i) => {
+      const sg = rec.segs[i];
+      Object.assign(sg, w);
+      Object.assign(sg.canvas.style, { top: `${w.start + w.off}px`, height: `${w.end - w.start}px` });
+    });
+    paintSegs(rec);
+  }
+  function paintSegs(rec) {
+    for (const sg of rec.segs) {
+      if (!rec.full) { sg.canvas.width = 0; sg.canvas.height = 0; continue; }
+      const k = rec.full.width / rec.W, hgt = sg.end - sg.start;
+      sg.canvas.width = rec.full.width;
+      sg.canvas.height = Math.max(1, Math.round(hgt * k));
+      sg.canvas.getContext("2d").drawImage(rec.full, 0, Math.round(sg.start * k), rec.full.width, sg.canvas.height, 0, 0, sg.canvas.width, sg.canvas.height);
+    }
+  }
+  // 그림이 그려지면 줄마다 「한 줄 전체가 고른 색인가」 를 작게 줄여 재 둔다. 자를 줄이 도표·그림을 가로지르지 않게 쓴다
+  function measureBlank(rec) {
+    const sw = 240, sh = Math.max(1, Math.round(rec.H * sw / rec.W));
+    const c = document.createElement("canvas");
+    c.width = sw; c.height = sh;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(rec.full, 0, 0, sw, sh);
+    const d = ctx.getImageData(0, 0, sw, sh).data;
+    const rows = new Uint8Array(sh);
+    for (let y = 0; y < sh; y++) {
+      let lo = 255, hi = 0;
+      for (let x = 0; x < sw; x++) {
+        const i = (y * sw + x) * 4, v = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
+        if (v < lo) lo = v; if (v > hi) hi = v;
+      }
+      rows[y] = hi - lo < 14 ? 1 : 0;
+    }
+    rec.blank = (y) => rows[Math.min(sh - 1, Math.max(0, Math.floor(y * sh / rec.H)))] === 1;
   }
 
   // 원본 그림은 화면 가까이 온 쪽만 그린다. 쪽이 많으면 멀어진 쪽의 그림은 비워 메모리를 아낀다(글자 층·표시는 그대로 남는다)
@@ -310,14 +410,21 @@
         const p = byBox.get(e.target);
         if (e.isIntersecting && !p.drawn) {
           p.drawn = true;
-          p.canvas.width = Math.floor(p.vp.width * dpr);
-          p.canvas.height = Math.floor(p.vp.height * dpr);
-          p.task = p.page.render({ canvasContext: p.canvas.getContext("2d"), viewport: p.vp, transform: dpr === 1 ? null : [dpr, 0, 0, dpr, 0, 0] });
-          p.task.promise.catch(() => {});
+          const full = document.createElement("canvas");
+          full.width = Math.floor(p.vp.width * dpr);
+          full.height = Math.floor(p.vp.height * dpr);
+          p.task = p.page.render({ canvasContext: full.getContext("2d"), viewport: p.vp, transform: dpr === 1 ? null : [dpr, 0, 0, dpr, 0, 0] });
+          p.task.promise.then(() => {
+            if (!p.drawn) return;
+            p.full = full;
+            if (!p.blank) measureBlank(p);
+            relayout(p); // 그림을 재었으니 자를 줄을 다시 고르고 조각을 칠한다
+          }).catch(() => {});
         } else if (!e.isIntersecting && p.drawn && pages.length > 20) {
           p.task?.cancel();
           p.drawn = false;
-          p.canvas.width = 0; p.canvas.height = 0;
+          p.full = null;
+          paintSegs(p);
         }
       }
     }, { rootMargin: "1500px 0px" });
@@ -389,7 +496,7 @@
       }
       layer.append(div);
       const text = p.lines.map((x) => x.text.replace(/\s+/g, " ").trim()).filter(Boolean).join(" ");
-      if (text.length >= 2) out.push({ el: div, text });
+      out.push({ el: div, text, tiny: text.length < 2, left: bx, top: by, right: bx + bw, bottom: by + bh });
     }
     for (const br of layer.querySelectorAll("br")) br.remove();
     return out;
