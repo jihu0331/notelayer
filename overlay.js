@@ -361,6 +361,10 @@
   let saveTimer = 0;
   // 고칠 때마다 저장 창에 보낸다. 저장 창이 닫혀 있으면 「저장하지 않은 변경」으로 남겨 두었다가 다시 연결되면 보낸다
   function save() {
+    if (HOST?.ephemeral) return; // 예시 화면: 고친 내용을 저장하지 않는다(새로고침하면 처음 상태)
+    // 저장 창은 저장이 필요한 순간에 연다. 누름(적용·수정) 안에서 불리므로 대개 팝업 차단에 걸리지 않는다.
+    // 막혀도 조용히 넘어가고, 저장 상태 줄의 「저장 창 열기」·작은 상자의 「저장 창」 버튼으로 열면 그때 저장한다
+    if (!LOCAL && BASE && (!conn.win || conn.win.closed)) openStore({ quiet: true });
     conn.dirty = true;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(async () => {
@@ -553,7 +557,39 @@
     .mini[hidden] { display: none; }
     .mini:hover { box-shadow: 0 6px 22px rgba(0,0,0,.22); }
     .mini:focus-visible { outline: 2px solid #6366f1; }
-    .mini-head { display: flex; align-items: center; gap: 6px; }
+    .overview { position: fixed; left: 12px; top: 12px; pointer-events: auto; z-index: 3; padding: 8px 10px 9px; border-radius: 10px;
+      background: #fff; color: #1f2328; border: 1px solid #e5e7eb; box-shadow: 0 6px 22px rgba(0,0,0,.18);
+      font: 12px/1.5 "Pretendard Variable", "Pretendard", "IBM Plex Sans KR", "Malgun Gothic", sans-serif; }
+    .overview[hidden] { display: none; }
+    .ov-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+    .ov-head .grow { flex: 1; }
+    .ov-head .x { border: 0; background: none; color: #6b7280; cursor: pointer; font: inherit; padding: 0 2px; }
+    .ov-map { position: relative; overflow: hidden; border: 1px solid #d1d5db; border-radius: 4px; background: #f9fafb; cursor: pointer; }
+    .ov-part { position: absolute; background: #e5e7eb; border-radius: 2px; }
+    .ov-root { position: absolute; background: rgba(245, 158, 11, .22); outline: 1.5px solid #f59e0b; border-radius: 2px; }
+    .ov-line { position: absolute; background: rgba(180, 83, 9, .45); border-radius: 1px; }
+    .ov-view { position: absolute; border: 1.5px dashed #2563eb; border-radius: 2px; pointer-events: none; }
+    .ov-legend { display: flex; align-items: center; gap: 4px; margin-top: 6px; color: #6b7280; font-size: 11px; }
+    .ov-legend .sw { display: inline-block; width: 10px; height: 8px; border-radius: 2px; margin-left: 4px; }
+    .ov-legend .sw:first-child { margin-left: 0; }
+    .ov-legend .sw-root { background: rgba(245, 158, 11, .35); outline: 1px solid #f59e0b; }
+    .ov-legend .sw-view { border: 1.5px dashed #2563eb; }
+    .overview.dark { background: #1f2329; color: #e5e7eb; border-color: #374151; }
+    .overview.dark .ov-map { background: #111418; border-color: #374151; }
+    .overview.dark .ov-part { background: #2d333b; }
+    .detail-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 6px 0 8px; }
+    .detail-label { font-size: 12px; color: #6b7280; }
+    .segs { display: inline-flex; border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; }
+    .segs .seg { border: 0; border-radius: 0; margin: 0; padding: 3px 10px; background: #fff; color: #374151; font: inherit; font-size: 12px; cursor: pointer; }
+    .segs .seg + .seg { border-left: 1px solid #d1d5db; }
+    .segs .seg[aria-pressed="true"] { background: #111827; color: #fff; }
+    .detail-hint { flex-basis: 100%; font-size: 11.5px; color: #6b7280; }
+    .panel.dark .segs { border-color: #374151; }
+    .panel.dark .segs .seg { background: #1f2329; color: #d1d5db; }
+    .panel.dark .segs .seg + .seg { border-left-color: #374151; }
+    .panel.dark .segs .seg[aria-pressed="true"] { background: #e5e7eb; color: #111827; }
+    .mini-head { display: flex; align-items: center; gap: 6px; cursor: grab; touch-action: none; }
+    .mini-head:active { cursor: grabbing; }
     .mini-head b { font-size: 13px; }
     .mini .dot { width: 7px; height: 7px; border-radius: 50%; background: #d1d5db; }
     .mini .dot.on { background: #10b981; }
@@ -689,6 +725,9 @@
     .imp-chip { position: absolute; pointer-events: auto; cursor: pointer; padding: 0 7px; height: 18px; border-radius: 999px; white-space: nowrap;
       font: 600 11px/18px "Pretendard Variable", "Pretendard", "Malgun Gothic", sans-serif; box-shadow: 0 0 0 1px rgba(0,0,0,.06); }
     .imp-chip.left { transform: translateX(-100%); }
+    .imp-why { position: absolute; transform: translateX(-100%); pointer-events: auto; cursor: pointer; white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis; text-align: right; font: 400 11px/16px "Pretendard Variable", "Pretendard", "Malgun Gothic", sans-serif; opacity: .9; }
+    .imp-why.wrap { white-space: normal; word-break: keep-all; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
     .pop .why { white-space: normal; max-width: 300px; padding: 4px 8px; line-height: 1.5; }
     /* 요약 고치기: 상자 끌어 옮기기, 오른쪽 아래 칸에서 글 고치기 */
     .td-node.editable { cursor: grab; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
@@ -1051,6 +1090,59 @@
       badgeLayer.append(box);
       setTimeout(() => box.remove(), 2500);
     }, 400);
+    openOverview();
+  }
+
+  // ── 본문 영역 지도: 페이지 전체를 왼쪽 위에 작게 줄여 그리고, 본문으로 고른 영역과 지금 보는 곳을 겹쳐 보인다 ──
+  // 화면을 찍지 않고 큰 구획(머리·메뉴·옆 칸·바닥 등)만 회색 상자로 그린다. 지도를 누르면 그 자리로 굴러간다
+  const overview = h("div", { class: "overview", hidden: true });
+  const OV_W = 200;
+  let ovScale = null;
+  function docSize() {
+    const de = document.documentElement, b = document.body;
+    return { w: Math.max(de.scrollWidth, b?.scrollWidth || 0, innerWidth), h: Math.max(de.scrollHeight, b?.scrollHeight || 0, innerHeight) };
+  }
+  function openOverview() { overview.hidden = false; renderOverview(); addEventListener("scroll", moveOverviewView, { passive: true }); }
+  function closeOverview() { overview.hidden = true; removeEventListener("scroll", moveOverviewView); }
+  function ovRect(r, cls, extra = "") {
+    const { sx, sy } = ovScale;
+    return h("div", { class: cls, style: `left:${r.l * sx}px;top:${r.t * sy}px;width:${Math.max(2, (r.r - r.l) * sx)}px;height:${Math.max(1, (r.b - r.t) * sy)}px;${extra}` });
+  }
+  const docRect = (el) => { const r = el.getBoundingClientRect(); return { l: r.left + scrollX, t: r.top + scrollY, r: r.right + scrollX, b: r.bottom + scrollY, w: r.width, h: r.height }; };
+  function renderOverview() {
+    if (overview.hidden || !state.root) return;
+    const d = docSize();
+    const H = Math.max(80, Math.min(d.h * (OV_W / d.w), innerHeight - 150));
+    ovScale = { sx: OV_W / d.w, sy: H / d.h };
+    const map = h("div", { class: "ov-map", style: `width:${OV_W}px;height:${H}px`, title: "누르면 그 자리로 이동합니다",
+      onclick: (e) => {
+        const r = map.getBoundingClientRect();
+        scrollTo({ left: 0, top: (e.clientY - r.top) / ovScale.sy - innerHeight / 2, behavior: "smooth" });
+      } });
+    // 큰 구획: 화면에 보이고 너무 작지 않은 것만. 본문 영역과 그 안쪽은 따로 그리므로 뺀다
+    const parts = [];
+    for (const el of document.querySelectorAll("header, nav, aside, footer, main, [role=banner], [role=navigation], [role=complementary], [role=contentinfo], [role=main]")) {
+      if (parts.length >= 40 || el === state.root || state.root.contains(el) || el.closest("notelayer-overlay")) continue;
+      const r = docRect(el);
+      if (r.w < 40 || r.h < 16) continue;
+      parts.push(ovRect(r, "ov-part"));
+    }
+    const root = docRect(state.root);
+    const lines = state.paras.slice(0, 300).map((p) => { const r = docRect(p.el); return r.h ? ovRect(r, "ov-line") : null; });
+    const view = h("div", { class: "ov-view" });
+    map.replaceChildren(...parts, ovRect(root, "ov-root"), ...lines, view);
+    overview.replaceChildren(
+      h("div", { class: "ov-head" }, h("b", {}, "본문 영역"), h("span", { class: "grow" }),
+        h("button", { class: "x", title: "지도 닫기", onclick: closeOverview }, "✕")),
+      map,
+      h("div", { class: "ov-legend" }, h("span", { class: "sw sw-root" }), "본문으로 고른 곳", h("span", { class: "sw sw-view" }), "지금 보는 곳"));
+    moveOverviewView();
+  }
+  function moveOverviewView() {
+    if (overview.hidden || !ovScale) return;
+    const v = overview.querySelector(".ov-view");
+    if (v) Object.assign(v.style, { left: `${scrollX * ovScale.sx}px`, top: `${scrollY * ovScale.sy}px`,
+      width: `${innerWidth * ovScale.sx}px`, height: `${innerHeight * ovScale.sy}px` });
   }
 
   // ── 패널 ──
@@ -1061,6 +1153,37 @@
     : h("div", { class: "mini", hidden: true, role: "button", tabindex: "0", title: "눌러서 notelayer 패널 펼치기",
       onclick: () => setMin(false), onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setMin(false); } } });
   let storeLive = false; // 작은 상자의 저장 점(저장 창과 연결됐는지)
+  // 작은 상자 옮기기: 윗줄(이름 줄)을 잡고 끈다. 옮긴 자리는 화면 왼쪽 위 기준으로 이 사이트에 기억하고,
+  // 창 크기가 바뀌어도 화면 밖으로 나가지 않게 붙잡는다
+  let miniDragged = false;
+  function placeMini() {
+    const pos = ui.miniPos;
+    if (!pos) return;
+    const w = pill.offsetWidth || 200, hgt = pill.offsetHeight || 40;
+    const x = clamp(pos.x, 4, Math.max(4, innerWidth - w - 4)), y = clamp(pos.y, 4, Math.max(4, innerHeight - hgt - 4));
+    Object.assign(pill.style, { left: `${x}px`, top: `${y}px`, right: "auto" });
+  }
+  pill.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || !e.target.closest(".mini-head") || e.target.closest("button")) return;
+    const r = pill.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
+    const x0 = e.clientX, y0 = e.clientY;
+    miniDragged = false;
+    const move = (ev) => {
+      if (!miniDragged && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 4) return; // 살짝 누른 것은 누름으로 둔다
+      miniDragged = true;
+      ui.miniPos = { x: ev.clientX - dx, y: ev.clientY - dy };
+      placeMini();
+    };
+    const up = () => {
+      removeEventListener("pointermove", move); removeEventListener("pointerup", up);
+      if (miniDragged) { saveUi(); setTimeout(() => { miniDragged = false; }, 0); } // 끈 직후의 누름 한 번만 막고 바로 푼다
+    };
+    addEventListener("pointermove", move);
+    addEventListener("pointerup", up);
+    e.preventDefault(); // 끄는 동안 본문 글자가 골라지지 않게
+  });
+  // 끈 직후의 누름은 「펼치기」로 치지 않는다
+  pill.addEventListener("click", (e) => { if (miniDragged) { e.stopPropagation(); e.preventDefault(); } }, true);
   function renderMini() {
     if (pill.hidden) return;
     const t = TEMPLATES[state.tpl], c = colors();
@@ -1093,15 +1216,33 @@
           ...(state.imps.length ? [eyeOnly("imp", "중요도", state.imps.length)] : []),
           ...(state.trs.size ? [eyeOnly("tr", "번역", state.trs.size)] : []),
           ...(state.orphans.length ? [h("span", {}, `제자리를 잃은 표시 `, h("b", {}, String(state.orphans.length)))] : [])]
-        : [h("span", {}, COMPACT ? "이 페이지에 저장된 표시가 아직 없습니다. 「AI 답 넣기」에서 요청문을 복사해 AI 답을 붙여 넣으세요" : "눌러서 요청문을 복사하고 AI 답을 붙여 넣으세요")]),
+        : [h("span", {}, !COMPACT ? "눌러서 요청문을 복사하고 AI 답을 붙여 넣으세요"
+          : !LOCAL && !storeLive ? "저장해 둔 표시는 「저장 창」을 열면 불러옵니다. 새로 만들려면 「AI 답 넣기」에서 요청문을 복사하세요"
+          : "이 페이지에 저장된 표시가 아직 없습니다. 「AI 답 넣기」에서 요청문을 복사해 AI 답을 붙여 넣으세요")]),
       COMPACT ? h("div", { class: "mini-acts" },
         h("button", { class: "act", disabled: !state.concepts?.nodes?.length, title: state.concepts ? "개념 구조도를 크게 봅니다" : "요약(개념 구조도)이 아직 없습니다", onclick: stop(openSummary) }, "요약 보기"),
         h("button", { class: `act sw${state.editing ? " on" : ""}`, role: "switch", "aria-checked": String(state.editing),
           title: state.editing ? "누르면 고칠 수 없게 합니다" : "누르면 표시·설명·번역을 고칠 수 있습니다", onclick: stop(() => setEditing(!state.editing)) },
           state.editing ? "✎ 수정 가능" : "🔒 수정 불가"),
-        h("button", { class: "act", title: "요청문 복사·AI 답 붙여 넣기·내보내기", onclick: stop(() => setMin(false)) }, "AI 답 넣기")) : "");
+        h("button", { class: "act", title: "요청문 복사·AI 답 붙여 넣기·내보내기", onclick: stop(() => setMin(false, true)) }, "AI 답 넣기"),
+        // 저장 창을 쓰는 웹페이지에서만 보인다(PDF 노트는 같은 화면이 저장해서 저장 창이 없다)
+        !LOCAL && BASE ? h("button", { class: "act", title: storeLive ? "열려 있는 저장 창으로 옮겨 갑니다" : "저장 창을 엽니다",
+          onclick: stop(goStore) }, "저장 창 ↗") : null) : "");
+    placeMini(); // 내용 폭이 바뀌어도 옮겨 둔 자리에서 화면 밖으로 나가지 않게
   }
   const foundMsg = h("p", { class: "muted" });
+  // 설명 분량: 요청문에 넣을 설명 규칙을 고른다. 고른 값은 이 사이트에 기억한다
+  const DETAILS = [["brief", "간단히", "막힐 만한 곳에만 한두 문장"], ["mid", "중간", "어려운 문단에 풀이와 예시"], ["deep", "상세히", "문단마다 풀이·예시·먼저 알 것·헷갈리는 점"]];
+  const detailHint = h("span", { class: "detail-hint" });
+  const detailBtns = DETAILS.map(([k, label, hint]) => h("button", { class: "seg", "aria-pressed": "false", title: hint,
+    onclick: () => { ui.detail = k; saveUi(); renderDetail(); } }, label));
+  function renderDetail() {
+    const cur = ui.detail || "mid";
+    DETAILS.forEach(([k], i) => detailBtns[i].setAttribute("aria-pressed", String(k === cur)));
+    detailHint.textContent = DETAILS.find(([k]) => k === cur)[2] + (cur === "deep" ? " · 긴 글은 답이 잘릴 수 있어요(그땐 글자를 골라 「🔎 자세히 묻기」)" : "");
+  }
+  const detailRow = h("div", { class: "detail-row" }, h("span", { class: "detail-label" }, "설명"), h("span", { class: "segs" }, ...detailBtns), detailHint);
+  renderDetail();
   const resetRootBtn = h("button", { hidden: true, title: "이 사이트에 기억한 본문 상자를 지우고 자동으로 고릅니다", onclick: () => {
     try { localStorage.removeItem(ROOT_KEY); } catch {}
     setRoot(findRoot());
@@ -1114,9 +1255,10 @@
   const storeOpenBtn = h("button", { class: "primary", hidden: true, onclick: () => openStore() }, "저장 창 열기");
   const saveBar = h("div", { class: "savebar" }, storeState, savedMsg, storeOpenBtn);
   const setMsg = (el, text, err = false) => { el.className = err ? "msg err" : "msg"; el.textContent = text; };
-  const steps = h("details", { class: "steps", open: true },
-    h("summary", {}, "요청문 복사 · 답 붙여 넣기 · 내보내기"),
+  // 접고 펴는 줄 없이 늘 펼쳐 둔다. 다른 곳의 steps.open 대입은 이 상자에서는 아무 일도 하지 않는다
+  const steps = h("div", { class: "steps" },
     h("h3", {}, "1. 이 페이지 본문으로 요청문 만들기"), foundMsg,
+    detailRow,
     h("div", { class: "row" },
       h("button", { class: "primary", onclick: copyPrompt }, "요청문 복사"),
       h("button", { onclick: showRoot }, "본문 영역 보기"),
@@ -1141,24 +1283,33 @@
   const grip = h("div", { class: "grip", onpointerdown: startResize });
   const panel = h("aside", { class: "panel" },
     grip,
-    h("header", {}, h("b", {}, "notelayer"), tplSelect, editBtn, sideBtn, popBtn,
-      h("button", { class: "icon dock-only", title: "접기", onclick: () => setMin(true) }, "—"),
-      HOST ? null : h("button", { class: "icon", title: "닫기(저장한 표시는 남는다)", onclick: destroy }, "✕")),
+    // 수정 켜고 끄기는 작은 상자에 있다. 좌우 옮기기·별도 창 떼어 내기는 쓰지 않아 머리줄에서 뺐다(코드는 남겨 둠)
+    h("header", {}, h("b", {}, "notelayer"), tplSelect,
+      // 작은 상자를 쓰는 화면에서는 ✕ 가 패널만 닫고 작은 상자로 돌아간다(전부 끄기는 작은 상자의 ✕)
+      COMPACT ? h("button", { class: "icon", title: "닫고 작은 상자로 돌아가기", onclick: () => setMin(true) }, "✕")
+        : [h("button", { class: "icon dock-only", title: "접기", onclick: () => setMin(true) }, "—"),
+          HOST ? null : h("button", { class: "icon", title: "닫기(저장한 표시는 남는다)", onclick: destroy }, "✕")]),
     h("div", { class: "edit-bar" }, "수정 모드 — 본문 글자를 끌어 골라 표시·설명을 달고, 표시를 눌러 종류를 바꾸거나 지웁니다. 설명 카드는 글을 눌러 바로 고칩니다."),
     h("div", { class: "body" }, saveBar, steps, resultBox));
   // 도구 막대는 패널보다 위에 그려야 패널 옆 글자를 골라도 눌린다
-  shadow.append(panel, pill, pop);
+  shadow.append(panel, pill, pop, overview);
   // 품는 화면이 테마를 바꾸면(notelayer-overlay 의 data-theme) 패널도 따라간다
-  const syncTheme = () => panel.classList.toggle("dark", host.getAttribute("data-theme") === "dark");
+  const syncTheme = () => { const dark = host.getAttribute("data-theme") === "dark"; panel.classList.toggle("dark", dark); overview.classList.toggle("dark", dark); };
   new MutationObserver(syncTheme).observe(host, { attributes: true, attributeFilter: ["data-theme"] });
   syncTheme();
 
-  function setMin(min) {
+  // stepsOnly: 작은 상자의 「AI 답 넣기」 로 열면 요청문·답·내보내기 칸만 보인다.
+  // 설명 목록이 필요한 길(옆 패널 설명 카드 열기 등)은 setMin(false) 로 열어 전부 보인다
+  let stepsOnly = false;
+  function setMin(min, onlySteps = false) {
     if (min) panel.setAttribute("data-min", ""); else panel.removeAttribute("data-min");
     pill.hidden = !min;
+    stepsOnly = !min && onlySteps;
+    if (stepsOnly) steps.open = true;
+    resultBox.hidden = !hasData() || stepsOnly;
     renderMini();
   }
-  const saveUi = () => store.set(UI_KEY, { side: state.side, width: state.width, boxMode: INLINE_ONLY ? ui.boxMode : state.boxMode, showPoints: ui.showPoints });
+  const saveUi = () => store.set(UI_KEY, { side: state.side, width: state.width, boxMode: INLINE_ONLY ? ui.boxMode : state.boxMode, showPoints: ui.showPoints, miniPos: ui.miniPos, detail: ui.detail });
 
   // 본문 양옆 빈자리 중 넓은 쪽에, 그 폭에 맞춰 둔다. 자리가 모자라면 기본 폭으로 겹쳐 두고 별도 창을 권한다
   function autoPlace() {
@@ -1236,7 +1387,7 @@
     return letters > 40 && ko / letters < 0.3;
   }
   async function copyPrompt() {
-    const text = PROMPT.build({ title: document.title, paragraphs: state.paras, templateId: state.tpl, template: TEMPLATES[state.tpl], needTr: needsTranslation() });
+    const text = PROMPT.build({ title: document.title, paragraphs: state.paras, templateId: state.tpl, template: TEMPLATES[state.tpl], needTr: needsTranslation(), detail: ui.detail || "mid" });
     const ok = await copyText(text);
     setMsg(copyMsg, ok ? `복사했습니다(${text.length.toLocaleString()}자). 쓰는 AI 에 붙여 넣으세요.` : "복사하지 못했습니다.", !ok);
   }
@@ -1337,7 +1488,7 @@
   let tab = "boxes";
   function renderResult() {
     const has = hasData();
-    resultBox.hidden = !has;
+    resultBox.hidden = !has || stepsOnly;
     if (!has) { renderMini(); return; }
     renderOrphans();
     const t = TEMPLATES[state.tpl];
@@ -1970,6 +2121,19 @@
     const ls = lineRects(rg);
     return ls.length ? { l: Math.min(...ls.map((x) => x.left)), r: Math.max(...ls.map((x) => x.right)), t: ls[0].top, b: ls[ls.length - 1].bottom } : null;
   }
+  // 문단의 첫 줄 상자(화면 좌표). 「실무 핵심」 은 묶음 전체가 아니라 첫 줄(그 묶음의 주제)만 칠한다
+  function firstLineBox(el) {
+    const rg = document.createRange(); rg.selectNodeContents(el);
+    const l = lineRects(rg)[0];
+    return l ? { l: l.left, r: l.right, t: l.top, b: l.bottom } : null;
+  }
+  // 이유 한 줄의 폭(.imp-why 글꼴 기준)을 재서 왼쪽 여백에 들어가는지 본다
+  let measureCtx = null;
+  function textWidth(t) {
+    measureCtx ??= document.createElement("canvas").getContext("2d");
+    measureCtx.font = '400 11px "Pretendard Variable", "Pretendard", "Malgun Gothic", sans-serif';
+    return measureCtx.measureText(t).width;
+  }
   function drawImp() {
     if (!state.show.imp || !state.imps.length || state.focus) { if (impSig) { impLayer.replaceChildren(); impSig = ""; } return; }
     const sx = scrollX, sy = scrollY, dark = host.getAttribute("data-theme") === "dark", names = levelNames();
@@ -1990,13 +2154,28 @@
       if (x.level === "rare" && !PDF) c = { ...c, tint: `rgba(${bgOf(state.paras[x.i].el).join(",")},.55)` };
       const L = Math.min(...boxes.map((b) => b.l)), R = Math.max(...boxes.map((b) => b.r));
       const T = Math.min(...boxes.map((b) => b.t)), B = Math.max(...boxes.map((b) => b.b));
-      for (const b of boxes) out.push(h("div", { class: "imp-tint", style: `left:${b.l - 6}px;top:${b.t - 3}px;width:${b.r - b.l + 12}px;height:${b.b - b.t + 6}px;background:${c.tint}` }));
+      // 「실무 핵심」 은 묶음의 첫 줄(주제)만 칠하고, 묶음 범위는 왼쪽 세로 줄로만 보인다. 나머지 등급은 묶음 전체에 옅게 깐다
+      let tints = boxes;
+      if (x.level === "core") {
+        const f = firstLineBox(state.paras[x.i].el);
+        tints = f ? [{ l: f.l + sx, r: f.r + sx, t: f.t + sy, b: f.b + sy }] : [];
+      }
+      for (const b of tints) out.push(h("div", { class: "imp-tint", style: `left:${b.l - 6}px;top:${b.t - 3}px;width:${b.r - b.l + 12}px;height:${b.b - b.t + 6}px;background:${c.tint}` }));
       out.push(h("div", { class: "imp-bar", style: `left:${L - 14}px;top:${T - 3}px;height:${B - T + 6}px;background:${c.bar}` }));
       // 꼬리표는 왼쪽 여백에. 여백이 좁으면(휴대폰 등) 오른쪽 위에
       const roomLeft = L - sx > 96;
       out.push(h("div", { class: `imp-chip${roomLeft ? " left" : ""}`, title: x.why || names[x.level],
         style: `left:${roomLeft ? L - 20 : R - 6}px;top:${T - (roomLeft ? 1 : 21)}px;background:${c.chip};color:${c.ink}${roomLeft ? "" : ";transform:translateX(-100%)"}`,
         onclick: (e) => { e.stopPropagation(); showImpTools(x, e.clientX, e.clientY); } }, names[x.level]));
+      // 이유는 늘 꼬리표 바로 아래, 꼬리표 오른쪽 끝에 맞춰 둔다. 왼쪽 여백에 한 줄로 들어가면 한 줄로,
+      // 여백이 모자라면 여백 폭 안에서 두 줄까지만 접는다(AI 에는 이유를 15자 안팎으로 쓰게 해 대개 한 줄이다)
+      if (x.why && roomLeft) {
+        const room = L - sx - 32;
+        const fits = textWidth(x.why) + 4 <= room;
+        out.push(h("div", { class: `imp-why${fits ? "" : " wrap"}`, title: x.why,
+          style: `left:${L - 20}px;top:${T + 19}px;color:${c.ink}${fits ? "" : `;width:${Math.max(60, room)}px`}`,
+          onclick: (e) => { e.stopPropagation(); showImpTools(x, e.clientX, e.clientY); } }, x.why));
+      }
     }
     impLayer.replaceChildren(...out);
   }
@@ -2311,15 +2490,24 @@
   // 주소는 정리한 KEY 만 보낸다(지금 주소창의 전체 주소는 보내지 않는다)
   const msgFor = (type, id, extra = {}) => ({ nl: "page", type, id, key: KEY, title: document.title, ...extra });
   function setSaved(text, err = false) { savedMsg.className = err ? "msg err" : "msg"; savedMsg.textContent = text; }
-  function openStore() {
+  function openStore({ quiet = false } = {}) {
     if (LOCAL) { connect(); return null; }
     if (!BASE) return null;
     // 로컬 시험 서버에서 불렀으면 시험용 저장 창 이름을 따로 써서 공개용 저장 창을 덮지 않는다
     const storeName = /^http:\/\/(localhost|127\.0\.0\.1)[:/]/.test(BASE) ? "notelayer-store-dev" : "notelayer-store";
     try { conn.win = window.open(`${BASE}store.html`, storeName, `popup=yes,width=380,height=560,left=${Math.max(0, screen.availWidth - 400)},top=60`); } catch { conn.win = null; }
-    if (!conn.win) setSaved("팝업이 막혀 저장 창을 열지 못했습니다. 주소창 오른쪽에서 이 사이트의 팝업을 허용해 주세요.", true);
+    if (!conn.win) {
+      if (!quiet) setSaved("팝업이 막혀 저장 창을 열지 못했습니다. 주소창 오른쪽에서 이 사이트의 팝업을 허용해 주세요.", true);
+      renderStore();
+      return null;
+    }
     connect();
     return conn.win;
+  }
+  // 작은 상자의 「저장 창」 버튼: 열려 있으면 그 창을 앞으로 가져오고, 닫혀 있으면 새로 연다
+  function goStore() {
+    if (conn.win && !conn.win.closed) { try { conn.win.focus(); return; } catch {} }
+    openStore();
   }
   // 저장 창이 다 뜰 때까지 인사를 되풀이한다(뜨기 전에 보낸 메시지는 버려진다)
   function connect() {
@@ -2376,8 +2564,26 @@
     if (d.type === "error") p.no(new Error(d.message)); else p.ok(d);
   }
   // 연결되면: 저장하지 않은 변경이 있으면 보내고, 아직 아무 표시도 없으면 저장본을 꺼내 칠한다
+  // 저장 창은 필요할 때만 열리므로, 처음 연결되기 전에 답을 적용·수정했을 수 있다.
+  // 그때 이 페이지의 예전 저장본이 있으면 말없이 덮어쓰지 않고 한 번 묻는다(이 연결에서 한 번만)
+  let storeSynced = false;
   async function onStoreReady() {
-    if (conn.dirty) { save(); return; }
+    const first = !storeSynced;
+    storeSynced = true;
+    if (conn.dirty) {
+      if (first && !LOCAL) {
+        try {
+          const r = await send("load");
+          if (r.record?.data && !confirm("이 페이지에 예전에 저장한 표시가 있습니다. 지금 표시로 바꿔 저장할까요?\n(취소하면 예전에 저장한 표시를 불러옵니다)")) {
+            clearTimeout(saveTimer); conn.dirty = false;
+            await loadSaved({ replace: true });
+            renderStore();
+            return;
+          }
+        } catch {}
+      }
+      save(); return;
+    }
     if (hasData()) return;
     await loadSaved();
   }
@@ -2392,7 +2598,7 @@
         const res = apply(data, { restored: true });
         setSaved(`${replace ? "저장 창에서 불러온 파일로 다시 칠했습니다" : "저장해 둔 표시를 불러왔습니다"} · ${fmtTime(r.record.savedAt)}${r.from === "folder" ? " · 폴더의 파일에서" : ""}`
           + `${res?.moved ? ` · 글이 바뀌어 자리를 다시 잡은 표시 ${res.moved}개` : ""}${res?.orphans ? ` · 제자리를 잃은 표시 ${res.orphans}개` : ""}`);
-      } else if (!r.record) setSaved("이 페이지에 저장한 표시가 아직 없습니다. 답을 적용하거나 고치면 자동으로 저장됩니다.");
+      } else if (!r.record && !HOST?.ephemeral) setSaved("이 페이지에 저장한 표시가 아직 없습니다. 답을 적용하거나 고치면 자동으로 저장됩니다.");
     } catch (err) {
       setSaved(`불러오지 못했습니다: ${err.message}`, true);
     }
@@ -2410,19 +2616,23 @@
       storeOpenBtn.hidden = true;
       storeState.className = conn.ready ? "msg" : "msg err";
       storeState.textContent = conn.ready
-        ? `● 이 PC 에 저장합니다${conn.folder ? "(연결한 폴더에도 파일로)" : ""}. 서버로 보내지 않습니다.`
+        ? HOST?.ephemeral ? "예시 화면입니다. 표시·설명을 고쳐 볼 수 있지만 저장되지 않고, 새로고침하면 처음 상태로 돌아갑니다."
+        : `● 이 PC 에 저장합니다${conn.folder ? "(연결한 폴더에도 파일로)" : ""}. 서버로 보내지 않습니다.`
         : "○ 저장소를 여는 중…";
       return;
     }
     const live = conn.win && !conn.win.closed;
     storeLive = !!(conn.ready && live);
     renderMini();
-    storeOpenBtn.hidden = !BASE || !!(conn.ready && live);
+    // 저장 창이 닫혀 있을 때는 안내 줄을 통째로 숨긴다(여는 버튼은 작은 상자의 「저장 창」).
+    // 팝업이 막혔다는 알림처럼 따로 남긴 말이 있을 때만 보인다
+    saveBar.hidden = !!BASE && !live && !savedMsg.textContent;
+    storeOpenBtn.hidden = true;
     storeState.className = conn.ready && live ? "msg" : "msg err";
     storeState.textContent = !BASE ? "저장 창 주소를 알 수 없어 저장할 수 없습니다. 즐겨찾기 버튼으로 다시 열어 주세요."
       : conn.ready && live ? `● 저장 창과 연결됨 — 이 PC 에 저장합니다${conn.folder ? "(고른 폴더에도 파일로)" : ""}. 서버로 보내지 않고, 다른 사이트는 이 메모를 볼 수 없습니다.`
       : live ? "○ 저장 창과 연결하는 중…"
-      : `○ 저장 창이 닫혀 있어 저장되지 않습니다${conn.dirty ? "(저장하지 않은 변경이 있습니다)" : ""}.`;
+      : "";
   }
 
   function destroy() {
@@ -2443,7 +2653,7 @@
     closeSummary(); host.remove(); pageStyle.remove();
     delete window.NL_OVERLAY;
   }
-  function onResize() { placePanel(); queueDraw(); }
+  function onResize() { placePanel(); placeMini(); renderOverview(); queueDraw(); }
   function onPageHide() { if (state.popup) try { state.popup.close(); } catch {} }
 
   // ── 시작 ──
@@ -2482,15 +2692,15 @@
     conn.win = window.__NL_STORE_WIN || null;
     try { delete window.__NL_STORE_WIN; } catch {}
     conn.watchT = setInterval(() => { if (conn.ready && (!conn.win || conn.win.closed)) { conn.ready = false; renderStore(); } }, 2000);
-    // 저장 창을 먼저 열지 않는 예전 즐겨찾기로 불렀으면 여기서 연다. 누른 지 몇 초 안이라 대개 팝업 차단에 걸리지 않는다.
-    // 막히면 openStore 가 「저장 창 열기」를 누르라고 알린다
-    if (!conn.win && BASE) openStore(); else connect();
+    // 즐겨찾기 버튼이 누르는 순간 열어 둔 저장 창이 있으면 바로 잇는다. 저장 창을 먼저 열지 않는 예전 즐겨찾기로 불렀으면 여기서 연다.
+    // 누른 지 몇 초 안이라 대개 팝업 차단에 걸리지 않는다. 막히면 저장할 때나 「저장 창」 버튼으로 다시 연다
+    if (!conn.win && BASE) openStore({ quiet: true }); else connect();
   }
 
   window.NL_OVERLAY = {
-    // 버튼을 다시 누르면: 저장 창이 닫혀 있으면 다시 열고 패널을 보이고, 아니면 패널을 접고 편다
+    // 버튼을 다시 누르면: 저장 창이 닫혀 있으면 다시 열고, 아니면 패널(작은 상자)을 숨기고 보인다
     toggle: () => {
-      if (!LOCAL && BASE && (!conn.win || conn.win.closed)) { openStore(); setMin(false); return; }
+      if (!LOCAL && BASE && (!conn.win || conn.win.closed)) { openStore(); if (COMPACT) host.style.display = ""; else setMin(false); return; }
       if (COMPACT) { host.style.display = host.style.display === "none" ? "" : "none"; return; }
       if (state.popup) state.popup.focus(); else setMin(!panel.hasAttribute("data-min"));
     },
