@@ -62,7 +62,9 @@ function startNotelayer() {
   function save() { try { localStorage.setItem(STORE, JSON.stringify(state)); } catch {} }
 
   const state = loadState();
-  const ui = { doc: DOCS[0].id, tpl: DOCS[0].templates[0], editing: false, summary: false, focus: null, concept: null, layers: { marks: true, boxes: true, mine: true, tr: true } };
+  // 예시 문서는 문서 보기에 내놓지 않는다(예시는 example.html 이 지금 화면 방식으로 보여 준다). 내가 넣은 문서가 있으면 그것부터 연다
+  const firstDoc = () => DOCS.find((d) => userDocIds.has(d.id)) || DOCS[0];
+  const ui = { doc: firstDoc().id, tpl: firstDoc().templates[0], editing: false, summary: false, focus: null, concept: null, layers: { marks: true, boxes: true, mine: true, tr: true } };
   let focusId = null;           // 새로 단 메모: 그려진 뒤 바로 입력칸에 커서를 둔다
   const openIds = new Set();    // 펼쳐 둔 상자
   let circleRanges = [];
@@ -770,7 +772,7 @@ function startNotelayer() {
     const sel = $("docSelect");
     sel.replaceChildren();
     const mine = DOCS.filter((d) => userDocIds.has(d.id));
-    const groups = [["예시 문서", DOCS.filter((d) => !userDocIds.has(d.id))], ["내 문서", mine]];
+    const groups = [["내 문서", mine]];
     for (const [label, list] of groups) {
       if (!list.length) continue;
       const g = el("optgroup"); g.label = label;
@@ -778,6 +780,8 @@ function startNotelayer() {
       sel.append(g);
     }
     sel.value = ui.doc;
+    // 내가 넣은 문서가 없으면 문서 보기 자리를 숨기고 예시 카드·새 문서 안내만 보인다
+    document.body.classList.toggle("no-docs", !mine.length);
   }
   fillDocSelect();
   $("docSelect").onchange = (e) => {
@@ -841,7 +845,7 @@ function startNotelayer() {
     const d = docById(ui.doc);
     if (!userDocIds.has(d.id) || !confirm(`「${d.title}」 문서와 그 위의 표시·메모를 지울까요?`)) return;
     DOCS.splice(DOCS.indexOf(d), 1); userDocIds.delete(d.id); delete state[d.id];
-    ui.doc = DOCS[0].id; ui.tpl = DOCS[0].templates[0];
+    ui.doc = firstDoc().id; ui.tpl = firstDoc().templates[0];
     saveUserDocs(); save(); fillDocSelect(); render();
   };
 

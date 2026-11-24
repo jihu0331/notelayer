@@ -200,6 +200,50 @@
 .drop input { display: none; }
 .bm-wrap { margin: 14px 0; }
 .bm { display: inline-block; padding: 8px 16px; border-radius: 999px; background: #f59e0b; color: #fff; font-weight: 600; text-decoration: none; cursor: grab; }
+
+/* ── 첫 화면 맨 위: 핵심 입구(「notelayer 켜기」 즐겨찾기 버튼) ── */
+.hero { position: relative; max-width: 780px; margin: 22px auto 0; padding: 22px 24px 16px; box-sizing: border-box;
+  background: var(--paper); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 6px 24px rgba(17, 24, 39, .06); font-family: var(--ui); color: var(--ink); }
+.hero-main { display: flex; align-items: center; gap: 20px; }
+.hero-text { flex: 1; min-width: 0; }
+.hero h1 { margin: 0 0 6px; font-size: 21px; line-height: 1.4; letter-spacing: -.01em; }
+.hero-sub { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.hero-cta { display: flex; flex-direction: column; align-items: center; gap: 6px; flex-shrink: 0; }
+.bm-big { padding: 12px 22px; font-size: 16px; box-shadow: 0 4px 14px rgba(245, 158, 11, .35); }
+.bm-big:hover { background: #d97706; }
+.hero-drag { font-size: 12px; color: var(--muted); }
+.hero-steps { margin: 18px 0 4px; padding: 14px 16px 2px 34px; background: var(--bg); border-radius: 12px; font-size: 13.5px; line-height: 1.65; }
+.hero-steps li { margin-bottom: 10px; }
+.hero kbd { font: 12px var(--ui); padding: 0 5px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; background: var(--paper); }
+.hero-fold { position: absolute; right: 14px; bottom: 10px; border: 0; background: none; color: var(--muted); font: 12px var(--ui); cursor: pointer; padding: 2px 4px; }
+.hero-fold:hover { color: var(--ink); text-decoration: underline; }
+.hero.folded { padding-bottom: 34px; }
+.hero.folded .hero-sub, .hero.folded .hero-steps { display: none; }
+.hero.folded h1 { font-size: 16px; margin: 0; }
+@media (max-width: 600px) {
+  .hero { margin: 14px 12px 0; padding: 18px 16px 34px; }
+  .hero-main { flex-direction: column; align-items: stretch; gap: 14px; }
+  .hero h1 { font-size: 18px; }
+}
+@media print { .hero, .examples { display: none !important; } }
+
+/* ── 첫 화면 예시: 예시 화면을 그대로 끼워 지금 모습으로 보여 준다 ── */
+.examples { max-width: 980px; margin: 18px auto 0; padding: 0 16px; box-sizing: border-box; font-family: var(--ui); }
+.ex-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; }
+.ex-label { font-size: 13px; color: var(--muted); font-weight: 600; margin-right: 4px; }
+.ex-tab { border: 1px solid var(--line); background: var(--paper); color: var(--ink); border-radius: 999px; padding: 4px 12px; font: 13px var(--ui); cursor: pointer; text-decoration: none; }
+.ex-tab[aria-selected="true"] { background: #111827; color: #fff; border-color: #111827; }
+.ex-link { color: var(--muted); }
+.ex-open { margin-left: auto; font-size: 12.5px; color: var(--muted); text-decoration: none; }
+.ex-open:hover, .ex-link:hover { text-decoration: underline; }
+.ex-frame { display: block; width: 100%; height: min(78vh, 900px); min-height: 520px; border: 1px solid var(--line); border-radius: 14px; background: #fff;
+  box-shadow: 0 6px 24px rgba(17, 24, 39, .06); }
+.no-docs-note { display: none; margin: 14px 0 40px; color: var(--muted); font-size: 13px; }
+@media (max-width: 600px) { .examples { padding: 0 12px; } .ex-open { margin-left: 0; flex-basis: 100%; } .ex-frame { height: 72vh; min-height: 420px; } }
+/* 내가 넣은 문서가 없으면 문서 보기 자리와 그 문서용 막대 버튼을 숨긴다 */
+body.no-docs main, body.no-docs .editbar, body.no-docs .side, body.no-docs .explain,
+body.no-docs #docSelect, body.no-docs .pick.tpl, body.no-docs #aiBtn, body.no-docs #editSwitch { display: none !important; }
+body.no-docs .no-docs-note { display: block; }
 .steps { padding-left: 20px; margin: 0 0 8px; }
 .steps li { margin-bottom: 14px; }
 .steps details { margin-top: 6px; }

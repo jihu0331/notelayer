@@ -143,12 +143,33 @@
 
   // ── 웹페이지 위 표시 층: 읽던 페이지에 templates.js·prompt.js·overlay.js 를 불러온다 ──
   // 이미 떠 있으면 다시 불러오지 않고 패널만 접고 편다. 보안 설정이 엄격한 사이트는 외부 스크립트를 막아 동작하지 않는다
-  // 저장 창(store.html)은 누르는 순간 먼저 연다. 파일을 다 받은 다음에 열면 팝업 차단에 걸린다
+  // 저장 창(store.html)은 누르는 순간 먼저 연다. 파일을 다 받은 다음에 열면 팝업 차단에 걸린다. 열려 있어야 이 페이지에 저장해 둔 표시를 불러온다
   // 로컬 시험 서버(dev/serve.js)로 연 화면이면 시험용 버튼이 된다. 저장 창 이름도 따로 써서 공개용 저장 창을 덮지 않는다
   const base = location.origin + location.pathname.replace(/[^/]*$/, "");
   const isLocal = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
   const storeName = isLocal ? "notelayer-store-dev" : "notelayer-store";
-  if (isLocal) $("overlayBookmarklet").textContent = "이 페이지 위에 표시하기 (시험용)";
+  if (isLocal) $("overlayBookmarklet").textContent = "notelayer 켜기 (시험용)";
+  // 첫 화면 맨 위 사용법: 접으면 버튼만 남기고, 접은 상태를 기억한다
+  const hero = $("hero"), heroFold = $("heroFold");
+  const setHeroFolded = (folded) => {
+    hero.classList.toggle("folded", folded);
+    heroFold.textContent = folded ? "사용법 보기" : "사용법 접기";
+    heroFold.setAttribute("aria-expanded", String(!folded));
+  };
+  try { setHeroFolded(localStorage.getItem("notelayer:heroFolded") === "1"); } catch { setHeroFolded(false); }
+  // 첫 화면 예시 탭: 끼운 예시 화면을 바꾼다. 「새 탭에서 크게」 주소도 같이 바꾼다
+  for (const tab of document.querySelectorAll(".ex-tab[data-t]")) {
+    tab.onclick = () => {
+      for (const t of document.querySelectorAll(".ex-tab[data-t]")) t.setAttribute("aria-selected", String(t === tab));
+      $("exFrame").src = `example.html?t=${tab.dataset.t}&embed=1`;
+      $("exOpen").href = `example.html?t=${tab.dataset.t}`;
+    };
+  }
+  heroFold.onclick = () => {
+    const folded = !hero.classList.contains("folded");
+    setHeroFolded(folded);
+    try { localStorage.setItem("notelayer:heroFolded", folded ? "1" : "0"); } catch {}
+  };
   const openStore = `window.open(B+'store.html','${storeName}','popup=yes,width=380,height=560,left='+Math.max(0,screen.availWidth-400)+',top=60')`;
   const overlayCode = isLocal
     // 시험용: 페이지가 localhost 에서 직접 파일을 받으면 크롬이 사이트마다 「로컬 네트워크 액세스」 허락을 요구한다.

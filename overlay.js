@@ -31,6 +31,7 @@
     review: { circle: "#15803d", hl: "rgba(134, 239, 172, .45)", wave: "#dc2626" },
   };
   const KINDS = ["circle", "highlight", "wave"];
+  const LEVELS = ["core", "some", "rare"]; // 중요도 음영 단계: 진한 음영 · 옅은 음영 · 흐리게
   const SKIP = "nav,aside,footer,header,form,[role=navigation],[role=complementary],[aria-hidden=true],notelayer-overlay,notelayer-note";
   const BLOCK = "p,div,li,ul,ol,dl,dt,dd,table,tr,td,th,pre,blockquote,h1,h2,h3,h4,h5,h6,section,article,figure,figcaption,main";
   const LEAF = "p,div,li,dt,dd,td,th,pre,blockquote,h1,h2,h3,h4,h5,h6,figcaption";
@@ -246,7 +247,8 @@
     boxes: [],            // { id, label, text, pre, answer, el, mine }
     trs: new Map(),       // 번역: 문단 번호(0부터) → { text, mine }
     concepts: null,
-    show: { circle: true, highlight: true, wave: true, boxes: true, tr: true },
+    imps: [],             // 중요도 음영 { i, j, level, why, mine } — 문단 i..j(0부터) 묶음. level = core | some | rare
+    show: { circle: true, highlight: true, wave: true, boxes: true, tr: true, imp: true },
     focus: null, // 「이것만 또렷하게」: circle | highlight | wave | boxes — 본문의 나머지 글자를 흐리게 하고 이 종류만 남긴다
     editing: false,
     side: ui.side || null, width: ui.width || null,
@@ -315,7 +317,16 @@
     const trs = (Array.isArray(result.translations) ? result.translations : [])
       .filter((t) => t && typeof t.text === "string" && t.text.trim() && n)
       .map((t) => ({ i: guess(Number.isFinite(Number(t.p)) ? Number(t.p) : 1), text: t.text.trim(), mine: !!t.mine }));
-    return { marks, boxes, trs, lost, moved, total: raw.length };
+    // 중요도: AI 가 매긴 문단 범위를 이 페이지 문단 자리로 옮긴다. 겹치면 나중 것이 이긴다
+    let imps = [];
+    for (const x of Array.isArray(result.importance) ? result.importance : []) {
+      if (!x || !LEVELS.includes(x.level) || !Number.isFinite(Number(x.p)) || !n) continue;
+      const a = guess(Number(x.p)), b = guess(Number.isFinite(Number(x.to)) ? Number(x.to) : Number(x.p));
+      const i = Math.min(a, b), j = Math.max(a, b);
+      imps = [...carve(imps, i, j), { i, j, level: x.level, why: typeof x.why === "string" ? tidy(x.why).slice(0, 80) : "", mine: !!x.mine }];
+    }
+    imps.sort((p, q) => p.i - q.i);
+    return { marks, boxes, trs, imps, lost, moved, total: raw.length };
   }
 
   function cleanConcepts(c) {
@@ -328,7 +339,7 @@
     for (const n of nodes) { const seen = new Set([n.id]); let p = n.parent; while (p) { if (seen.has(p)) { n.parent = null; break; } seen.add(p); p = nodes.find((x) => x.id === p)?.parent; } }
     const links = (Array.isArray(c.links) ? c.links : []).map((l) => ({ from: String(l?.from), to: String(l?.to), label: tidy(l?.label).slice(0, 24) }))
       .filter((l) => ids.has(l.from) && ids.has(l.to) && l.from !== l.to && l.label);
-    return nodes.length ? { topic: tidy(c.topic) || document.title, nodes, links } : null;
+    return nodes.length ? { topic: tidy(c.topic) || document.title, nodes, links, ...(c.mine ? { mine: true } : {}) } : null;
   }
 
   // ── 저장: 고친 결과까지 페이지 주소별로 남긴다. p 는 이 페이지 문단 번호라 다시 열면 그대로 맞는다 ──
@@ -340,15 +351,20 @@
       ],
       boxes: sortedBoxes().map((b) => ({ p: boxOrder(b) + 1 || 1, label: b.label, text: b.text, ...(b.pre ? { pre: b.pre } : {}), ...(b.answer ? { answer: b.answer } : {}), ...(b.mine ? { mine: true } : {}) })),
       ...(state.concepts ? { concepts: state.concepts } : {}),
+      ...(state.imps.length ? { importance: state.imps.map((x) => ({ p: x.i + 1, to: x.j + 1, level: x.level, ...(x.why ? { why: x.why } : {}), ...(x.mine ? { mine: true } : {}) })) } : {}),
       ...(state.trs.size ? { translations: [...state.trs].sort((a, b) => a[0] - b[0])
         .map(([i, t]) => ({ p: i + 1, text: t.text, ...(t.mine ? { mine: true } : {}) })) } : {}),
       ...(HOST?.extraData?.() || {}), // 품는 화면의 층(PDF 노트의 손글씨 ink)
     };
   }
-  const hasData = () => !!(state.marks.length || state.orphans.length || state.boxes.length || state.concepts || state.trs.size || HOST?.hasExtra?.());
+  const hasData = () => !!(state.marks.length || state.orphans.length || state.boxes.length || state.concepts || state.imps.length || state.trs.size || HOST?.hasExtra?.());
   let saveTimer = 0;
   // 고칠 때마다 저장 창에 보낸다. 저장 창이 닫혀 있으면 「저장하지 않은 변경」으로 남겨 두었다가 다시 연결되면 보낸다
   function save() {
+    if (HOST?.ephemeral) return; // 예시 화면: 고친 내용을 저장하지 않는다(새로고침하면 처음 상태)
+    // 저장 창은 저장이 필요한 순간에 연다. 누름(적용·수정) 안에서 불리므로 대개 팝업 차단에 걸리지 않는다.
+    // 막혀도 조용히 넘어가고, 저장 상태 줄의 「저장 창 열기」·작은 상자의 「저장 창」 버튼으로 열면 그때 저장한다
+    if (!LOCAL && BASE && (!conn.win || conn.win.closed)) openStore({ quiet: true });
     conn.dirty = true;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(async () => {
@@ -541,7 +557,39 @@
     .mini[hidden] { display: none; }
     .mini:hover { box-shadow: 0 6px 22px rgba(0,0,0,.22); }
     .mini:focus-visible { outline: 2px solid #6366f1; }
-    .mini-head { display: flex; align-items: center; gap: 6px; }
+    .overview { position: fixed; left: 12px; top: 12px; pointer-events: auto; z-index: 3; padding: 8px 10px 9px; border-radius: 10px;
+      background: #fff; color: #1f2328; border: 1px solid #e5e7eb; box-shadow: 0 6px 22px rgba(0,0,0,.18);
+      font: 12px/1.5 "Pretendard Variable", "Pretendard", "IBM Plex Sans KR", "Malgun Gothic", sans-serif; }
+    .overview[hidden] { display: none; }
+    .ov-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+    .ov-head .grow { flex: 1; }
+    .ov-head .x { border: 0; background: none; color: #6b7280; cursor: pointer; font: inherit; padding: 0 2px; }
+    .ov-map { position: relative; overflow: hidden; border: 1px solid #d1d5db; border-radius: 4px; background: #f9fafb; cursor: pointer; }
+    .ov-part { position: absolute; background: #e5e7eb; border-radius: 2px; }
+    .ov-root { position: absolute; background: rgba(245, 158, 11, .22); outline: 1.5px solid #f59e0b; border-radius: 2px; }
+    .ov-line { position: absolute; background: rgba(180, 83, 9, .45); border-radius: 1px; }
+    .ov-view { position: absolute; border: 1.5px dashed #2563eb; border-radius: 2px; pointer-events: none; }
+    .ov-legend { display: flex; align-items: center; gap: 4px; margin-top: 6px; color: #6b7280; font-size: 11px; }
+    .ov-legend .sw { display: inline-block; width: 10px; height: 8px; border-radius: 2px; margin-left: 4px; }
+    .ov-legend .sw:first-child { margin-left: 0; }
+    .ov-legend .sw-root { background: rgba(245, 158, 11, .35); outline: 1px solid #f59e0b; }
+    .ov-legend .sw-view { border: 1.5px dashed #2563eb; }
+    .overview.dark { background: #1f2329; color: #e5e7eb; border-color: #374151; }
+    .overview.dark .ov-map { background: #111418; border-color: #374151; }
+    .overview.dark .ov-part { background: #2d333b; }
+    .detail-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 6px 0 8px; }
+    .detail-label { font-size: 12px; color: #6b7280; }
+    .segs { display: inline-flex; border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; }
+    .segs .seg { border: 0; border-radius: 0; margin: 0; padding: 3px 10px; background: #fff; color: #374151; font: inherit; font-size: 12px; cursor: pointer; }
+    .segs .seg + .seg { border-left: 1px solid #d1d5db; }
+    .segs .seg[aria-pressed="true"] { background: #111827; color: #fff; }
+    .detail-hint { flex-basis: 100%; font-size: 11.5px; color: #6b7280; }
+    .panel.dark .segs { border-color: #374151; }
+    .panel.dark .segs .seg { background: #1f2329; color: #d1d5db; }
+    .panel.dark .segs .seg + .seg { border-left-color: #374151; }
+    .panel.dark .segs .seg[aria-pressed="true"] { background: #e5e7eb; color: #111827; }
+    .mini-head { display: flex; align-items: center; gap: 6px; cursor: grab; touch-action: none; }
+    .mini-head:active { cursor: grabbing; }
     .mini-head b { font-size: 13px; }
     .mini .dot { width: 7px; height: 7px; border-radius: 50%; background: #d1d5db; }
     .mini .dot.on { background: #10b981; }
@@ -608,7 +656,7 @@
     .sheet-body.panning { cursor: grabbing; user-select: none; }
     .td-rel { position: absolute; transform: translate(-50%, -50%); background: #f8fafc; color: #4b5563; font-size: 11px; padding: 0 5px; border-radius: 4px; white-space: nowrap; }
     .td-lab { position: absolute; transform: translate(-50%, -50%); background: #eef2ff; color: #4338ca; font-size: 11px; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
-    .td-sub { position: absolute; left: 0; color: #6b7280; font-size: 12px; }
+    .td-sub { position: absolute; left: 0; color: #6b7280; font-size: 12px; white-space: nowrap; }
     .sheet-detail { position: absolute; right: 16px; bottom: 16px; width: min(340px, calc(100% - 32px)); max-height: calc(100% - 32px); overflow: auto;
       background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px 18px; box-shadow: 0 10px 30px rgba(0,0,0,.18); }
     .sheet-detail[hidden] { display: none; }
@@ -656,10 +704,62 @@
     .pop button:hover { background: rgba(255,255,255,.15); }
     .pop button[aria-pressed="true"] { background: rgba(255,255,255,.28); }
     .pop .sep { width: 1px; background: rgba(255,255,255,.2); margin: 2px 2px; }
+    /* 수정 모드: 설명 옮기기(놓을 자리 줄·끌리는 꼬리표), 표시 범위 손잡이 */
+    .drop-line { position: fixed; height: 3px; border-radius: 2px; background: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,.25); pointer-events: none; z-index: 9; }
+    .drag-ghost { position: fixed; max-width: 240px; padding: 5px 10px; border-radius: 8px; background: #1f2328; color: #fff; pointer-events: none; z-index: 9;
+      font: 12px/1.4 "Pretendard Variable", "Pretendard", "Malgun Gothic", sans-serif; box-shadow: 0 6px 18px rgba(0,0,0,.3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .knob { position: fixed; width: 22px; pointer-events: none; z-index: 6; }
+    .knob::before { content: ""; position: absolute; left: 10px; width: 2px; top: 0; bottom: 0; background: #6366f1; }
+    .knob.start::before { top: 10px; }
+    .knob.end::before { bottom: 10px; }
+    .knob i { position: absolute; left: 5px; width: 12px; height: 12px; border-radius: 50%; background: #6366f1; box-shadow: 0 0 0 2px #fff;
+      pointer-events: auto; cursor: ew-resize; touch-action: none; user-select: none; -webkit-user-select: none; }
+    .knob.start i { top: 0; }
+    .knob.end i { bottom: 0; }
+    @media (pointer: coarse) { .knob i { left: 2px; width: 18px; height: 18px; } }
+    .drop-line[hidden], .drag-ghost[hidden], .knob[hidden] { display: none; }
+    /* 중요도 음영: 문단 묶음마다 옅은 바탕 + 왼쪽 막대 + 꼬리표. 거의 안 쓰는 곳은 흐린 막을 덮는다 */
+    .imp-tint, .imp-bar { position: absolute; pointer-events: none; }
+    .imp-tint { border-radius: 4px; }
+    .imp-bar { width: 3px; border-radius: 2px; }
+    .imp-chip { position: absolute; pointer-events: auto; cursor: pointer; padding: 0 7px; height: 18px; border-radius: 999px; white-space: nowrap;
+      font: 600 11px/18px "Pretendard Variable", "Pretendard", "Malgun Gothic", sans-serif; box-shadow: 0 0 0 1px rgba(0,0,0,.06); }
+    .imp-chip.left { transform: translateX(-100%); }
+    .imp-why { position: absolute; transform: translateX(-100%); pointer-events: auto; cursor: pointer; white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis; text-align: right; font: 400 11px/16px "Pretendard Variable", "Pretendard", "Malgun Gothic", sans-serif; opacity: .9; }
+    .imp-why.wrap { white-space: normal; word-break: keep-all; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+    .pop .why { white-space: normal; max-width: 300px; padding: 4px 8px; line-height: 1.5; }
+    /* 요약 고치기: 상자 끌어 옮기기, 오른쪽 아래 칸에서 글 고치기 */
+    .td-node.editable { cursor: grab; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+    .td-node.dragging { z-index: 3; opacity: .92; cursor: grabbing; box-shadow: 0 10px 28px rgba(0,0,0,.25); }
+    .td-node.drop { border-color: #6366f1; background: #eef2ff; box-shadow: 0 0 0 3px rgba(99,102,241,.35); }
+    .sheet-btn.sw-on { background: #fef3c7; border-color: #f59e0b; color: #92400e; }
+    .sheet-detail .ed-row { margin: 8px 0; }
+    .sheet-detail .ed-row > span { display: block; font-size: 11px; font-weight: 700; color: #6b7280; margin-bottom: 2px; }
+    .sheet-detail .ed { border: 1px dashed #cbd5e1; border-radius: 6px; padding: 3px 7px; min-height: 1.6em; cursor: text; outline: none; }
+    .sheet-detail .ed:focus { border: 1px solid #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,.2); }
+    .sheet-detail .ed.multi { white-space: pre-wrap; }
+    .sheet-detail .ed:empty::before { content: attr(data-ph); color: #9ca3af; }
+    .sheet-detail .ed-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+    .sheet-detail .danger { color: #b42318; }
+    :host([data-theme="dark"]) .td-node.drop { background: #262a4a; border-color: #818cf8; }
+    :host([data-theme="dark"]) .sheet-detail .ed { border-color: #3d434d; }
+    :host([data-theme="dark"]) .sheet-detail .danger { color: #f87171; }
+    :host([data-theme="dark"]) .sheet-btn.sw-on { background: #3b2f12; border-color: #b45309; color: #fbbf24; }
   ` + PANEL_CSS));
+  const impLayer = h("div", { class: "layer" }); // 중요도 음영(설명 배지·손잡이보다 아래)
   const badgeLayer = h("div", { class: "layer" });
   const pop = h("div", { class: "pop", hidden: true, onmousedown: (e) => e.preventDefault() });
-  shadow.append(badgeLayer);
+  shadow.append(impLayer, badgeLayer);
+  // 수정 모드에서 끌어 고치기에 쓰는 화면 조각과 상태(그리기 함수가 먼저 부를 수 있어 여기서 만든다)
+  const dragLine = h("div", { class: "drop-line", hidden: true });
+  const dragGhost = h("div", { class: "drag-ghost", hidden: true });
+  const knobs = ["start", "end"].map((side) => h("div", { class: `knob ${side}`, hidden: true },
+    h("i", { title: side === "start" ? "끌어서 표시가 시작하는 자리 옮기기" : "끌어서 표시가 끝나는 자리 옮기기", onpointerdown: (e) => startKnob(e, side) })));
+  shadow.append(dragLine, dragGhost, ...knobs);
+  let boxDrag = null, knobFor = null, knobDrag = null;
+  let impSig = ""; // 중요도 음영을 마지막으로 그린 자리(같으면 다시 만들지 않는다)
+  let dragEndAt = 0; // 끌기를 막 끝낸 손가락·마우스의 「누르기」 는 무시한다(놓자마자 다른 것이 열리지 않게)
 
   const colors = () => MARK_COLORS[state.tpl] || MARK_COLORS.tech;
   function paint() {
@@ -714,6 +814,8 @@
   let raf = 0;
   const queueDraw = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(drawLayer); };
   function drawLayer() {
+    drawKnobs();
+    drawImp();
     for (const b of badgeLayer.querySelectorAll(".badge")) b.remove();
     const sx = window.scrollX, sy = window.scrollY;
     renderInline();
@@ -759,11 +861,17 @@
     .lab-sel { font: 700 12px "Pretendard Variable", "Pretendard", "Malgun Gothic", sans-serif; color: var(--c); border: 1px solid var(--nl-line, #e5e7eb); border-radius: 6px; background: var(--nl-focus, #fff); padding: 1px 4px; }
     .del { border: 0; background: none; color: #9ca3af; cursor: pointer; font-size: 12px; padding: 0 4px; }
     .del:hover { color: #b42318; }
+    .grip { border: 0; background: none; color: var(--nl-muted, #9ca3af); cursor: grab; font-size: 14px; line-height: 1; padding: 2px 4px; margin-left: -6px;
+      touch-action: none; user-select: none; -webkit-user-select: none; }
+    .grip:hover { color: #6366f1; }
+    .card.dragging { opacity: .35; }
+    @media (pointer: coarse) { .grip { padding: 6px 8px; font-size: 16px; } }
     @media (hover: none) { .edit { visibility: visible; } }
     @media (pointer: coarse) { .edit, .del { padding: 4px 8px; font-size: 13px; } }
   `;
   const inlineHosts = [];
   const inlineEls = new Map(); // 설명 id → 본문 속 카드(수정 중이면 글 칸). 새 설명을 달면 여기로 커서를 옮긴다
+  const cardEls = new Map();   // 설명 id → 본문 속 카드 전체(설명을 끌어 옮길 때 놓을 자리를 잰다)
   let inlineSig = "";
   // 그릴 내용 — 설명 카드와 번역. 글자를 고치는 동안에는 이 값을 같이 갱신해 다시 그리지 않는다(다시 그리면 커서가 날아간다)
   function inlineParts() {
@@ -784,8 +892,10 @@
       const labels = [...new Set([...Object.keys(colors), b.label])];
       const txt = editField(b.text, "설명을 쓰세요", (v) => { b.text = v; b.mine = true; });
       inlineEls.set(b.id, txt);
-      return h("div", { class: "card", style: `--c:${c}` },
+      let card = null;
+      card = h("div", { class: "card", style: `--c:${c}` },
         h("div", { class: "head" },
+          h("button", { class: "grip", title: "끌어서 다른 문단 아래나 다른 설명 앞뒤로 옮깁니다", "aria-label": "설명 옮기기", onpointerdown: (e) => startBoxDrag(e, b, card) }, "⋮⋮"),
           h("select", { class: "lab-sel", onchange: (e) => { b.label = e.target.value; b.mine = true; afterChange(); } },
             labels.map((l) => h("option", { value: l, selected: l === b.label }, l))),
           h("span", { class: "grow" }),
@@ -793,6 +903,8 @@
         txt,
         editField(b.pre, "(선택) 글자 그림·비교", (v) => { b.pre = v; b.mine = true; }, "pre"),
         b.answer || state.tpl === "exam" ? editField(b.answer, "(선택) 답 — 처음에 접혀 보입니다", (v) => { b.answer = v; b.mine = true; }) : null);
+      cardEls.set(b.id, card);
+      return card;
     }
     const card = h("div", { class: "card", style: `--c:${c}` },
       h("div", { class: "head" }, h("span", { class: "chip" }, b.label), h("span", { class: "grow" }),
@@ -801,7 +913,7 @@
       h("div", {}, b.text),
       b.pre ? h("pre", {}, b.pre) : null,
       b.answer ? h("details", {}, h("summary", {}, "답 보기"), h("div", {}, b.answer)) : null);
-    inlineEls.set(b.id, card);
+    inlineEls.set(b.id, card); cardEls.set(b.id, card);
     return card;
   }
   function inlineTr(i, t, edit) {
@@ -834,7 +946,7 @@
     if (sig === inlineSig) return; // 내용이 그대로면 손대지 않는다(끼우면 페이지 높이가 바뀌어 다시 그리기가 돌아오므로)
     inlineSig = sig;
     for (const x of inlineHosts.splice(0)) x.remove();
-    inlineEls.clear();
+    inlineEls.clear(); cardEls.clear();
     const colors = TEMPLATES[state.tpl].boxes;
     // 문단마다 번역 → 설명 순서로 한 덩어리
     const groups = new Map();
@@ -961,7 +1073,7 @@
     state.root = el;
     state.paras = collectParagraphs(el);
     if (had) {
-      state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.trs = new Map();
+      state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.imps = []; state.trs = new Map();
       apply(data, { restored: true });
       save();
     } else { inlineSig = ""; paint(); drawLayer(); renderResult(); }
@@ -978,6 +1090,59 @@
       badgeLayer.append(box);
       setTimeout(() => box.remove(), 2500);
     }, 400);
+    openOverview();
+  }
+
+  // ── 본문 영역 지도: 페이지 전체를 왼쪽 위에 작게 줄여 그리고, 본문으로 고른 영역과 지금 보는 곳을 겹쳐 보인다 ──
+  // 화면을 찍지 않고 큰 구획(머리·메뉴·옆 칸·바닥 등)만 회색 상자로 그린다. 지도를 누르면 그 자리로 굴러간다
+  const overview = h("div", { class: "overview", hidden: true });
+  const OV_W = 200;
+  let ovScale = null;
+  function docSize() {
+    const de = document.documentElement, b = document.body;
+    return { w: Math.max(de.scrollWidth, b?.scrollWidth || 0, innerWidth), h: Math.max(de.scrollHeight, b?.scrollHeight || 0, innerHeight) };
+  }
+  function openOverview() { overview.hidden = false; renderOverview(); addEventListener("scroll", moveOverviewView, { passive: true }); }
+  function closeOverview() { overview.hidden = true; removeEventListener("scroll", moveOverviewView); }
+  function ovRect(r, cls, extra = "") {
+    const { sx, sy } = ovScale;
+    return h("div", { class: cls, style: `left:${r.l * sx}px;top:${r.t * sy}px;width:${Math.max(2, (r.r - r.l) * sx)}px;height:${Math.max(1, (r.b - r.t) * sy)}px;${extra}` });
+  }
+  const docRect = (el) => { const r = el.getBoundingClientRect(); return { l: r.left + scrollX, t: r.top + scrollY, r: r.right + scrollX, b: r.bottom + scrollY, w: r.width, h: r.height }; };
+  function renderOverview() {
+    if (overview.hidden || !state.root) return;
+    const d = docSize();
+    const H = Math.max(80, Math.min(d.h * (OV_W / d.w), innerHeight - 150));
+    ovScale = { sx: OV_W / d.w, sy: H / d.h };
+    const map = h("div", { class: "ov-map", style: `width:${OV_W}px;height:${H}px`, title: "누르면 그 자리로 이동합니다",
+      onclick: (e) => {
+        const r = map.getBoundingClientRect();
+        scrollTo({ left: 0, top: (e.clientY - r.top) / ovScale.sy - innerHeight / 2, behavior: "smooth" });
+      } });
+    // 큰 구획: 화면에 보이고 너무 작지 않은 것만. 본문 영역과 그 안쪽은 따로 그리므로 뺀다
+    const parts = [];
+    for (const el of document.querySelectorAll("header, nav, aside, footer, main, [role=banner], [role=navigation], [role=complementary], [role=contentinfo], [role=main]")) {
+      if (parts.length >= 40 || el === state.root || state.root.contains(el) || el.closest("notelayer-overlay")) continue;
+      const r = docRect(el);
+      if (r.w < 40 || r.h < 16) continue;
+      parts.push(ovRect(r, "ov-part"));
+    }
+    const root = docRect(state.root);
+    const lines = state.paras.slice(0, 300).map((p) => { const r = docRect(p.el); return r.h ? ovRect(r, "ov-line") : null; });
+    const view = h("div", { class: "ov-view" });
+    map.replaceChildren(...parts, ovRect(root, "ov-root"), ...lines, view);
+    overview.replaceChildren(
+      h("div", { class: "ov-head" }, h("b", {}, "본문 영역"), h("span", { class: "grow" }),
+        h("button", { class: "x", title: "지도 닫기", onclick: closeOverview }, "✕")),
+      map,
+      h("div", { class: "ov-legend" }, h("span", { class: "sw sw-root" }), "본문으로 고른 곳", h("span", { class: "sw sw-view" }), "지금 보는 곳"));
+    moveOverviewView();
+  }
+  function moveOverviewView() {
+    if (overview.hidden || !ovScale) return;
+    const v = overview.querySelector(".ov-view");
+    if (v) Object.assign(v.style, { left: `${scrollX * ovScale.sx}px`, top: `${scrollY * ovScale.sy}px`,
+      width: `${innerWidth * ovScale.sx}px`, height: `${innerHeight * ovScale.sy}px` });
   }
 
   // ── 패널 ──
@@ -988,6 +1153,37 @@
     : h("div", { class: "mini", hidden: true, role: "button", tabindex: "0", title: "눌러서 notelayer 패널 펼치기",
       onclick: () => setMin(false), onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setMin(false); } } });
   let storeLive = false; // 작은 상자의 저장 점(저장 창과 연결됐는지)
+  // 작은 상자 옮기기: 윗줄(이름 줄)을 잡고 끈다. 옮긴 자리는 화면 왼쪽 위 기준으로 이 사이트에 기억하고,
+  // 창 크기가 바뀌어도 화면 밖으로 나가지 않게 붙잡는다
+  let miniDragged = false;
+  function placeMini() {
+    const pos = ui.miniPos;
+    if (!pos) return;
+    const w = pill.offsetWidth || 200, hgt = pill.offsetHeight || 40;
+    const x = clamp(pos.x, 4, Math.max(4, innerWidth - w - 4)), y = clamp(pos.y, 4, Math.max(4, innerHeight - hgt - 4));
+    Object.assign(pill.style, { left: `${x}px`, top: `${y}px`, right: "auto" });
+  }
+  pill.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || !e.target.closest(".mini-head") || e.target.closest("button")) return;
+    const r = pill.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
+    const x0 = e.clientX, y0 = e.clientY;
+    miniDragged = false;
+    const move = (ev) => {
+      if (!miniDragged && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 4) return; // 살짝 누른 것은 누름으로 둔다
+      miniDragged = true;
+      ui.miniPos = { x: ev.clientX - dx, y: ev.clientY - dy };
+      placeMini();
+    };
+    const up = () => {
+      removeEventListener("pointermove", move); removeEventListener("pointerup", up);
+      if (miniDragged) { saveUi(); setTimeout(() => { miniDragged = false; }, 0); } // 끈 직후의 누름 한 번만 막고 바로 푼다
+    };
+    addEventListener("pointermove", move);
+    addEventListener("pointerup", up);
+    e.preventDefault(); // 끄는 동안 본문 글자가 골라지지 않게
+  });
+  // 끈 직후의 누름은 「펼치기」로 치지 않는다
+  pill.addEventListener("click", (e) => { if (miniDragged) { e.stopPropagation(); e.preventDefault(); } }, true);
   function renderMini() {
     if (pill.hidden) return;
     const t = TEMPLATES[state.tpl], c = colors();
@@ -1017,17 +1213,36 @@
           item("highlight", h("span", { class: "mk mk-hl" }), t.marks.highlight, n("highlight")),
           item("wave", h("span", { class: "mk mk-wave" }), t.marks.wave, n("wave")),
           item("boxes", null, "설명", state.boxes.length),
+          ...(state.imps.length ? [eyeOnly("imp", "중요도", state.imps.length)] : []),
           ...(state.trs.size ? [eyeOnly("tr", "번역", state.trs.size)] : []),
           ...(state.orphans.length ? [h("span", {}, `제자리를 잃은 표시 `, h("b", {}, String(state.orphans.length)))] : [])]
-        : [h("span", {}, COMPACT ? "이 페이지에 저장된 표시가 아직 없습니다. 「AI 답 넣기」에서 요청문을 복사해 AI 답을 붙여 넣으세요" : "눌러서 요청문을 복사하고 AI 답을 붙여 넣으세요")]),
+        : [h("span", {}, !COMPACT ? "눌러서 요청문을 복사하고 AI 답을 붙여 넣으세요"
+          : !LOCAL && !storeLive ? "저장해 둔 표시는 「저장 창」을 열면 불러옵니다. 새로 만들려면 「AI 답 넣기」에서 요청문을 복사하세요"
+          : "이 페이지에 저장된 표시가 아직 없습니다. 「AI 답 넣기」에서 요청문을 복사해 AI 답을 붙여 넣으세요")]),
       COMPACT ? h("div", { class: "mini-acts" },
         h("button", { class: "act", disabled: !state.concepts?.nodes?.length, title: state.concepts ? "개념 구조도를 크게 봅니다" : "요약(개념 구조도)이 아직 없습니다", onclick: stop(openSummary) }, "요약 보기"),
         h("button", { class: `act sw${state.editing ? " on" : ""}`, role: "switch", "aria-checked": String(state.editing),
           title: state.editing ? "누르면 고칠 수 없게 합니다" : "누르면 표시·설명·번역을 고칠 수 있습니다", onclick: stop(() => setEditing(!state.editing)) },
           state.editing ? "✎ 수정 가능" : "🔒 수정 불가"),
-        h("button", { class: "act", title: "요청문 복사·AI 답 붙여 넣기·내보내기", onclick: stop(() => setMin(false)) }, "AI 답 넣기")) : "");
+        h("button", { class: "act", title: "요청문 복사·AI 답 붙여 넣기·내보내기", onclick: stop(() => setMin(false, true)) }, "AI 답 넣기"),
+        // 저장 창을 쓰는 웹페이지에서만 보인다(PDF 노트는 같은 화면이 저장해서 저장 창이 없다)
+        !LOCAL && BASE ? h("button", { class: "act", title: storeLive ? "열려 있는 저장 창으로 옮겨 갑니다" : "저장 창을 엽니다",
+          onclick: stop(goStore) }, "저장 창 ↗") : null) : "");
+    placeMini(); // 내용 폭이 바뀌어도 옮겨 둔 자리에서 화면 밖으로 나가지 않게
   }
   const foundMsg = h("p", { class: "muted" });
+  // 설명 분량: 요청문에 넣을 설명 규칙을 고른다. 고른 값은 이 사이트에 기억한다
+  const DETAILS = [["brief", "간단히", "막힐 만한 곳에만 한두 문장"], ["mid", "중간", "어려운 문단에 풀이와 예시"], ["deep", "상세히", "문단마다 풀이·예시·먼저 알 것·헷갈리는 점"]];
+  const detailHint = h("span", { class: "detail-hint" });
+  const detailBtns = DETAILS.map(([k, label, hint]) => h("button", { class: "seg", "aria-pressed": "false", title: hint,
+    onclick: () => { ui.detail = k; saveUi(); renderDetail(); } }, label));
+  function renderDetail() {
+    const cur = ui.detail || "mid";
+    DETAILS.forEach(([k], i) => detailBtns[i].setAttribute("aria-pressed", String(k === cur)));
+    detailHint.textContent = DETAILS.find(([k]) => k === cur)[2] + (cur === "deep" ? " · 긴 글은 답이 잘릴 수 있어요(그땐 글자를 골라 「🔎 자세히 묻기」)" : "");
+  }
+  const detailRow = h("div", { class: "detail-row" }, h("span", { class: "detail-label" }, "설명"), h("span", { class: "segs" }, ...detailBtns), detailHint);
+  renderDetail();
   const resetRootBtn = h("button", { hidden: true, title: "이 사이트에 기억한 본문 상자를 지우고 자동으로 고릅니다", onclick: () => {
     try { localStorage.removeItem(ROOT_KEY); } catch {}
     setRoot(findRoot());
@@ -1040,9 +1255,10 @@
   const storeOpenBtn = h("button", { class: "primary", hidden: true, onclick: () => openStore() }, "저장 창 열기");
   const saveBar = h("div", { class: "savebar" }, storeState, savedMsg, storeOpenBtn);
   const setMsg = (el, text, err = false) => { el.className = err ? "msg err" : "msg"; el.textContent = text; };
-  const steps = h("details", { class: "steps", open: true },
-    h("summary", {}, "요청문 복사 · 답 붙여 넣기 · 내보내기"),
+  // 접고 펴는 줄 없이 늘 펼쳐 둔다. 다른 곳의 steps.open 대입은 이 상자에서는 아무 일도 하지 않는다
+  const steps = h("div", { class: "steps" },
     h("h3", {}, "1. 이 페이지 본문으로 요청문 만들기"), foundMsg,
+    detailRow,
     h("div", { class: "row" },
       h("button", { class: "primary", onclick: copyPrompt }, "요청문 복사"),
       h("button", { onclick: showRoot }, "본문 영역 보기"),
@@ -1067,24 +1283,33 @@
   const grip = h("div", { class: "grip", onpointerdown: startResize });
   const panel = h("aside", { class: "panel" },
     grip,
-    h("header", {}, h("b", {}, "notelayer"), tplSelect, editBtn, sideBtn, popBtn,
-      h("button", { class: "icon dock-only", title: "접기", onclick: () => setMin(true) }, "—"),
-      HOST ? null : h("button", { class: "icon", title: "닫기(저장한 표시는 남는다)", onclick: destroy }, "✕")),
+    // 수정 켜고 끄기는 작은 상자에 있다. 좌우 옮기기·별도 창 떼어 내기는 쓰지 않아 머리줄에서 뺐다(코드는 남겨 둠)
+    h("header", {}, h("b", {}, "notelayer"), tplSelect,
+      // 작은 상자를 쓰는 화면에서는 ✕ 가 패널만 닫고 작은 상자로 돌아간다(전부 끄기는 작은 상자의 ✕)
+      COMPACT ? h("button", { class: "icon", title: "닫고 작은 상자로 돌아가기", onclick: () => setMin(true) }, "✕")
+        : [h("button", { class: "icon dock-only", title: "접기", onclick: () => setMin(true) }, "—"),
+          HOST ? null : h("button", { class: "icon", title: "닫기(저장한 표시는 남는다)", onclick: destroy }, "✕")]),
     h("div", { class: "edit-bar" }, "수정 모드 — 본문 글자를 끌어 골라 표시·설명을 달고, 표시를 눌러 종류를 바꾸거나 지웁니다. 설명 카드는 글을 눌러 바로 고칩니다."),
     h("div", { class: "body" }, saveBar, steps, resultBox));
   // 도구 막대는 패널보다 위에 그려야 패널 옆 글자를 골라도 눌린다
-  shadow.append(panel, pill, pop);
+  shadow.append(panel, pill, pop, overview);
   // 품는 화면이 테마를 바꾸면(notelayer-overlay 의 data-theme) 패널도 따라간다
-  const syncTheme = () => panel.classList.toggle("dark", host.getAttribute("data-theme") === "dark");
+  const syncTheme = () => { const dark = host.getAttribute("data-theme") === "dark"; panel.classList.toggle("dark", dark); overview.classList.toggle("dark", dark); };
   new MutationObserver(syncTheme).observe(host, { attributes: true, attributeFilter: ["data-theme"] });
   syncTheme();
 
-  function setMin(min) {
+  // stepsOnly: 작은 상자의 「AI 답 넣기」 로 열면 요청문·답·내보내기 칸만 보인다.
+  // 설명 목록이 필요한 길(옆 패널 설명 카드 열기 등)은 setMin(false) 로 열어 전부 보인다
+  let stepsOnly = false;
+  function setMin(min, onlySteps = false) {
     if (min) panel.setAttribute("data-min", ""); else panel.removeAttribute("data-min");
     pill.hidden = !min;
+    stepsOnly = !min && onlySteps;
+    if (stepsOnly) steps.open = true;
+    resultBox.hidden = !hasData() || stepsOnly;
     renderMini();
   }
-  const saveUi = () => store.set(UI_KEY, { side: state.side, width: state.width, boxMode: INLINE_ONLY ? ui.boxMode : state.boxMode, showPoints: ui.showPoints });
+  const saveUi = () => store.set(UI_KEY, { side: state.side, width: state.width, boxMode: INLINE_ONLY ? ui.boxMode : state.boxMode, showPoints: ui.showPoints, miniPos: ui.miniPos, detail: ui.detail });
 
   // 본문 양옆 빈자리 중 넓은 쪽에, 그 폭에 맞춰 둔다. 자리가 모자라면 기본 폭으로 겹쳐 두고 별도 창을 권한다
   function autoPlace() {
@@ -1162,7 +1387,7 @@
     return letters > 40 && ko / letters < 0.3;
   }
   async function copyPrompt() {
-    const text = PROMPT.build({ title: document.title, paragraphs: state.paras, templateId: state.tpl, template: TEMPLATES[state.tpl], needTr: needsTranslation() });
+    const text = PROMPT.build({ title: document.title, paragraphs: state.paras, templateId: state.tpl, template: TEMPLATES[state.tpl], needTr: needsTranslation(), detail: ui.detail || "mid" });
     const ok = await copyText(text);
     setMsg(copyMsg, ok ? `복사했습니다(${text.length.toLocaleString()}자). 쓰는 AI 에 붙여 넣으세요.` : "복사하지 못했습니다.", !ok);
   }
@@ -1172,7 +1397,7 @@
   }
   function clearSaved() {
     if (!confirm("이 페이지의 표시·설명을 모두 지울까요? 저장한 것도 지워집니다.")) return;
-    state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.concepts = null; state.trs = new Map();
+    state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.imps = []; state.concepts = null; state.trs = new Map();
     paint(); drawLayer(); renderResult(); save();
     setMsg(applyMsg, "모두 지웠습니다.");
   }
@@ -1190,16 +1415,25 @@
     if (!restored && (state.marks.some((m) => !m.mine) || state.boxes.some((b) => !b.mine))
       && !confirm("지금 있는 AI 표시·설명을 이 답으로 바꿀까요? 내가 단 표시와 설명은 남습니다.")) return null;
     const a = anchor(result);
-    state.marks = restored ? a.marks : [...state.marks.filter((m) => m.mine), ...a.marks];
+    // 내가 남긴 것(옮기거나 고친 AI 표시·설명 포함)과 글이 같은 새 표시·설명은 건너뛴다(같은 설명이 두 번 붙지 않게)
+    const myMarks = state.marks.filter((m) => m.mine), myBoxes = state.boxes.filter((b) => b.mine);
+    const markKey = (m) => `${m.kind}\u0000${squash(m.quote)}`;
+    const haveMark = new Set(myMarks.map(markKey)), haveBox = new Set(myBoxes.map((b) => squash(b.text)));
+    state.marks = restored ? a.marks : [...myMarks, ...a.marks.filter((m) => !haveMark.has(markKey(m)))];
     state.orphans = restored ? a.lost : state.orphans.filter((o) => o.mine);
     state.attaching = null;
-    state.boxes = restored ? a.boxes : [...state.boxes.filter((b) => b.mine), ...a.boxes];
+    state.boxes = restored ? a.boxes : [...myBoxes, ...a.boxes.filter((b) => !haveBox.has(squash(b.text)))];
+    const myImps = state.imps.filter((x) => x.mine);
+    state.imps = restored ? a.imps : [...myImps, ...myImps.reduce((list, m) => carve(list, m.i, m.j), a.imps)].sort((p, q) => p.i - q.i);
     // 번역도 AI 것만 바꾸고 내가 고친 문단은 남긴다
     const trMap = restored ? new Map() : new Map([...state.trs].filter(([, t]) => t.mine));
     for (const t of a.trs) if (!trMap.has(t.i)) trMap.set(t.i, { text: t.text, mine: t.mine });
     state.trs = trMap;
     const c = cleanConcepts(result.concepts);
-    if (c || restored) state.concepts = c;
+    // 요약 구조도를 직접 고쳤으면, 새 답의 요약으로 바꾸기 전에 묻는다
+    const keepMine = !restored && c && state.concepts?.mine
+      && !confirm("요약 구조도를 직접 고친 적이 있습니다. 새 답의 요약으로 바꿀까요?\n(취소를 누르면 고친 요약을 그대로 둡니다)");
+    if ((c || restored) && !keepMine) state.concepts = c;
     if (restored || result.ink) HOST?.restoreExtra?.(result); // 품는 화면의 층도 되살린다
     paint(); drawLayer(); renderResult();
     if (!restored || a.moved) save(); // 자리를 다시 잡은 표시는 새 구절·앞뒤 글자로 저장해 둔다
@@ -1208,6 +1442,7 @@
     const parts = [`${restored ? "저장한 " : ""}표시 ${placed}/${a.total}개, 설명 ${a.boxes.length}개를 얹었습니다`];
     if (state.concepts) parts.push(`개념 ${state.concepts.nodes.length}개`);
     if (a.trs.length) parts.push(`번역 ${a.trs.length}문단`);
+    if (a.imps.length) parts.push(`중요도 ${a.imps.length}묶음`);
     if (a.moved) parts.push(`글이 바뀌어 자리를 다시 잡은 표시 ${a.moved}개`);
     if (a.lost.length) parts.push(restored
       ? `\n제자리를 잃은 표시 ${a.lost.length}개 — 원문이 바뀌어 찾지 못했습니다. 패널 위쪽 목록에서 다시 붙이거나 지울 수 있습니다`
@@ -1253,7 +1488,7 @@
   let tab = "boxes";
   function renderResult() {
     const has = hasData();
-    resultBox.hidden = !has;
+    resultBox.hidden = !has || stepsOnly;
     if (!has) { renderMini(); return; }
     renderOrphans();
     const t = TEMPLATES[state.tpl];
@@ -1265,6 +1500,7 @@
       toggle("highlight", h("span", { class: "sw sw-hl" }), `${t.marks.highlight} ${count("highlight")}`),
       toggle("wave", h("span", { class: "sw sw-wave" }), `${t.marks.wave} ${count("wave")}`),
       toggle("boxes", `설명 ${state.boxes.length}`),
+      ...(state.imps.length ? [toggle("imp", `중요도 ${state.imps.length}`)] : []),
       ...(INLINE_ONLY ? [] : [h("button", { title: "설명 카드를 문단 아래(본문 속)에 둘지, 옆 패널과 배지로 볼지", onclick: () => {
         state.boxMode = state.boxMode === "inline" ? "side" : "inline"; saveUi(); drawLayer(); renderResult(); tuckIfCovering();
       } }, state.boxMode === "inline" ? "설명 위치: 본문 속 ⇄" : "설명 위치: 옆 패널 ⇄")]));
@@ -1502,15 +1738,147 @@
     };
     const zoomCenter = (k) => zoomAt(view.z * k, body.clientWidth / 2, body.clientHeight / 2);
     zoomLabel.onclick = () => zoomAt(1, body.clientWidth / 2, body.clientHeight / 2);
+    // ── 고르기와 오른쪽 아래 칸: 수정 모드면 이름·풀이·관계·핵심 내용을 그 자리에서 고친다 ──
+    let selId = null, redrawT = 0;
+    const ptsOf = (n) => (Array.isArray(n.points) ? n.points : []).filter((x) => typeof x === "string" && x.trim());
+    const conceptsChanged = (now = false) => {
+      c.mine = true; // 고친 요약은 AI 답을 새로 붙일 때 바꿀지 묻는다
+      save(); renderResult();
+      clearTimeout(redrawT);
+      if (now) draw(); else redrawT = setTimeout(draw, 250);
+    };
+    const closeBtn = () => h("button", { class: "detail-close", title: "닫기", onclick: () => select(null) }, "✕");
+    const viewDetail = (n) => {
+      const pts = ptsOf(n), up = n.parent && c.nodes.find((x) => x.id === n.parent);
+      return [
+        closeBtn(),
+        h("h3", {}, n.term),
+        h("div", { class: "role" }, [n.role, up ? `${up.term} 의 ${relName(n) || "하위 개념"}` : null].filter(Boolean).join(" · ")),
+        n.gloss ? h("div", { class: "gloss" }, n.gloss) : null,
+        pts.length ? h("ul", {}, pts.map((x) => h("li", {}, x))) : null,
+        n.def?.quote ? h("button", { class: "go", onclick: () => { closeSummary(); showQuote(n.def); } }, "원문에서 보기 ↗") : null,
+      ].filter(Boolean);
+    };
+    const field = (name, value, ph, onText, multi = false) => h("div", { class: "ed-row" }, h("span", {}, name),
+      h("div", { class: `ed${multi ? " multi" : ""}`, contenteditable: "plaintext-only", "data-ph": ph,
+        oninput: (e) => { onText(multi ? e.target.innerText : tidy(e.target.innerText)); conceptsChanged(); } }, value || ""));
+    const editDetail = (n) => {
+      const up = n.parent && c.nodes.find((x) => x.id === n.parent);
+      return [
+        closeBtn(),
+        h("div", { class: "role" }, up ? `「${up.term}」 아래에 있는 개념` : "맨 위 개념", " · 상자를 끌어 다른 개념 위에 놓으면 그 밑으로 옮겨집니다"),
+        field("이름", n.term, "개념 이름", (v) => { n.term = v; }),
+        field("한 줄 풀이", n.gloss, "처음 보는 사람을 위한 한 줄 풀이", (v) => { n.gloss = v; }),
+        up ? field("위 개념과의 관계 (갈라지는 선에 붙는 이름)", n.rel, "예: 종류, 구성 요소, 단계", (v) => { n.rel = v; }) : null,
+        field("핵심 내용 (한 줄에 하나)", ptsOf(n).join("\n"), "개념을 누르면 펼쳐지는 핵심 내용", (v) => { n.points = v.split("\n").map(tidy).filter(Boolean); }, true),
+        h("div", { class: "ed-acts" },
+          h("button", { class: "sheet-btn", onclick: () => addChild(n) }, "+ 하위 개념"),
+          n.def?.quote ? h("button", { class: "sheet-btn", onclick: () => { closeSummary(); showQuote(n.def); } }, "원문에서 보기 ↗") : null,
+          h("button", { class: "sheet-btn danger", onclick: () => removeNode(n) }, "이 개념 지우기")),
+      ].filter(Boolean);
+    };
+    const select = (n) => {
+      selId = n ? n.id : null;
+      for (const e of body.querySelectorAll(".td-node")) e.classList.toggle("sel", e.dataset.id === selId);
+      if (!n) { detail.hidden = true; return; }
+      detail.hidden = false;
+      detail.replaceChildren(...(state.editing ? editDetail(n) : viewDetail(n)));
+    };
+    const addChild = (n) => {
+      const k = { id: uid(), term: "새 개념", parent: n.id, rel: "", gloss: "", points: [] };
+      c.nodes.push(k);
+      conceptsChanged(true);
+      select(k);
+      const ed = detail.querySelector(".ed");
+      ed?.focus();
+      try { const r = document.createRange(); r.selectNodeContents(ed); getSelection().removeAllRanges(); getSelection().addRange(r); } catch {}
+    };
+    const removeNode = (n) => {
+      if (!confirm(`「${n.term || "이름 없는 개념"}」 개념을 지울까요? 하위 개념은 한 칸 위로 올라갑니다.`)) return;
+      for (const k of c.nodes) if (k.parent === n.id) k.parent = n.parent ?? null;
+      c.nodes = c.nodes.filter((x) => x !== n);
+      c.links = c.links.filter((l) => l.from !== n.id && l.to !== n.id);
+      select(null);
+      if (!c.nodes.length) { state.concepts = null; closeSummary(); afterChange(); return; }
+      conceptsChanged(true);
+    };
+    // ── 상자 끌어 옮기기(수정 모드): 마우스는 그냥 끌고, 손가락·펜은 길게 누른 다음 끈다(짧게 끌면 지금처럼 화면 이동) ──
+    let nodeDrag = null;
+    const descOf = (id) => {
+      const out = new Set();
+      const walk = (p) => { for (const k of c.nodes) if (k.parent === p && !out.has(k.id)) { out.add(k.id); walk(k.id); } };
+      walk(id);
+      return out;
+    };
+    const inside = (r, x, y) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    const overEmpty = (x, y) => x != null && inside(body.getBoundingClientRect(), x, y) && (detail.hidden || !inside(detail.getBoundingClientRect(), x, y));
+    const beginNode = (d) => {
+      d.on = true;
+      clearTimeout(d.timer);
+      d.desc = descOf(d.n.id);
+      d.el.classList.add("dragging");
+      try { body.setPointerCapture(d.id); } catch {}
+      if (touches.delete(d.id)) { gesture = null; body.classList.remove("panning"); } // 손가락 끌기는 화면 이동 대신 상자 옮기기로
+      hint.textContent = "개념 위에 놓으면 그 밑으로 들어갑니다";
+    };
+    const grab = (e, n, el) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      const d = { n, el, id: e.pointerId, sx: e.clientX, sy: e.clientY, on: false, target: null, touch: e.pointerType !== "mouse", timer: 0 };
+      nodeDrag = d;
+      if (d.touch) d.timer = setTimeout(() => { if (nodeDrag === d && !d.on) beginNode(d); }, 450);
+    };
+    // 끄는 중이면 true(화면 이동을 건너뛴다)
+    const moveNode = (e) => {
+      const d = nodeDrag;
+      if (!d.on) {
+        if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 6) return !d.touch;
+        if (d.touch) { clearTimeout(d.timer); nodeDrag = null; return false; } // 길게 누르기 전에 움직였으면 화면 이동
+        beginNode(d);
+      }
+      d.x = e.clientX; d.y = e.clientY;
+      d.el.style.transform = `translate(${(d.x - d.sx) / view.z}px, ${(d.y - d.sy) / view.z}px)`;
+      let t = null;
+      for (const el of body.querySelectorAll(".td-node")) {
+        if (el === d.el || d.desc.has(el.dataset.id)) continue;
+        if (inside(el.getBoundingClientRect(), d.x, d.y)) { t = el; break; }
+      }
+      for (const el of body.querySelectorAll(".td-node.drop")) if (el !== t) el.classList.remove("drop");
+      t?.classList.add("drop");
+      d.target = t?.dataset.id || null;
+      const tn = d.target && c.nodes.find((x) => x.id === d.target);
+      hint.textContent = tn ? `「${tn.term}」 밑으로 옮깁니다`
+        : d.n.parent != null && overEmpty(d.x, d.y) ? "여기에 놓으면 맨 위 개념이 됩니다" : "개념 위에 놓으면 그 밑으로 들어갑니다";
+      return true;
+    };
+    const dropNode = () => {
+      const d = nodeDrag;
+      nodeDrag = null;
+      clearTimeout(d.timer);
+      if (!d.on) return;
+      dragEndAt = Date.now();
+      syncEditBtn();
+      const to = d.target ? d.target : overEmpty(d.x, d.y) ? null : undefined; // undefined = 놓을 데가 아님(그대로)
+      if (to !== undefined && to !== (d.n.parent ?? null)) { d.n.parent = to; conceptsChanged(true); }
+      else draw();
+    };
+    const hint = h("span", { class: "muted hint" });
+    const editToggle = h("button", { class: "sheet-btn", onclick: () => { setEditing(!state.editing); syncEditBtn(); select(null); draw(); } });
+    const syncEditBtn = () => {
+      editToggle.textContent = state.editing ? "✎ 수정 가능" : "🔒 수정 불가";
+      editToggle.className = `sheet-btn${state.editing ? " sw-on" : ""}`;
+      editToggle.title = state.editing ? "누르면 고칠 수 없게 합니다" : "누르면 개념 상자를 끌어 옮기고, 누른 개념의 이름·풀이·핵심 내용을 고칠 수 있습니다";
+      hint.textContent = state.editing ? "상자를 끌어 다른 개념 위에 놓기 · 눌러서 오른쪽 아래에서 고치기 · 빈 곳 끌기로 이동"
+        : "휠·두 손가락으로 확대·축소 · 끌어서 이동 · Esc 로 닫기";
+    };
     const draw = () => {
       pointsBtn.textContent = ui.showPoints ? "핵심 내용 접기" : "핵심 내용 펼치기";
       pointsBtn.setAttribute("aria-pressed", String(!!ui.showPoints));
       const tree = h("div", { class: "td-tree" });
       body.replaceChildren(tree);
-      layoutTopDown(tree, c, detail);
+      layoutTopDown(tree, c, { sel: selId, select, grab });
       if (view) apply(); else fit();
     };
-    pointsBtn.onclick = () => { ui.showPoints = !ui.showPoints; store.set(UI_KEY, { ...(store.get(UI_KEY) || {}), showPoints: ui.showPoints }); detail.hidden = true; draw(); };
+    pointsBtn.onclick = () => { ui.showPoints = !ui.showPoints; store.set(UI_KEY, { ...(store.get(UI_KEY) || {}), showPoints: ui.showPoints }); select(null); draw(); };
     body.addEventListener("wheel", (e) => {
       e.preventDefault();
       const r = body.getBoundingClientRect();
@@ -1536,6 +1904,7 @@
       else if (touches.size === 1) gesture = { kind: "pan", sx: local(e).x, sy: local(e).y, vx: view.x, vy: view.y, moved: false };
     });
     body.addEventListener("pointermove", (e) => {
+      if (nodeDrag && nodeDrag.id === e.pointerId && moveNode(e)) return;
       if (!touches.has(e.pointerId) || !gesture) return;
       touches.set(e.pointerId, local(e));
       if (gesture.kind === "pinch" && touches.size >= 2) {
@@ -1558,6 +1927,7 @@
       }
     });
     const lift = (e) => {
+      if (nodeDrag && nodeDrag.id === e.pointerId) dropNode();
       if (!touches.delete(e.pointerId)) return;
       if (touches.size === 1) { const [p] = [...touches.values()]; gesture = { kind: "pan", sx: p.x, sy: p.y, vx: view.x, vy: view.y, moved: true }; }
       else if (touches.size === 0) { gesture = null; body.classList.remove("panning"); }
@@ -1571,12 +1941,13 @@
           h("button", { class: "sheet-btn", title: "축소", onclick: () => zoomCenter(1 / 1.2) }, "－"), zoomLabel,
           h("button", { class: "sheet-btn", title: "확대", onclick: () => zoomCenter(1.2) }, "＋"),
           h("button", { class: "sheet-btn", title: "구조도 전체가 화면에 들어오게", onclick: fit }, "화면 맞춤")),
-        h("span", { class: "muted hint" }, "휠·두 손가락으로 확대·축소 · 끌어서 이동 · Esc 로 닫기"), h("button", { class: "sheet-close", title: "닫기", onclick: closeSummary }, "✕")),
+        editToggle, hint, h("button", { class: "sheet-close", title: "닫기", onclick: closeSummary }, "✕")),
       h("div", { class: "sheet-main" }, body, detail));
     shadow.append(sheet);
+    syncEditBtn();
     draw();
   }
-  function layoutTopDown(tree, c, detail) {
+  function layoutTopDown(tree, c, ctx) {
     const NW = 220, HG = 24, VG = 86, SUB = 30;
     const byId = new Map(c.nodes.map((n) => [n.id, n]));
     const kids = new Map();
@@ -1585,24 +1956,12 @@
     const alone = (n) => n.parent == null && !(kids.get(n.id) || []).length && !linked.has(n.id);
     const roots = (kids.get(null) || []).filter((n) => !alone(n)), lonely = (kids.get(null) || []).filter(alone);
     const els = new Map();
-    const select = (n) => {
-      for (const e of els.values()) e.classList.toggle("sel", e === els.get(n.id));
-      detail.hidden = false;
-      const pts = (Array.isArray(n.points) ? n.points : []).filter((x) => typeof x === "string" && x.trim());
-      const up = n.parent && byId.get(n.parent);
-      detail.replaceChildren(...[
-        h("button", { class: "detail-close", title: "닫기", onclick: () => { detail.hidden = true; for (const e of els.values()) e.classList.remove("sel"); } }, "✕"),
-        h("h3", {}, n.term),
-        h("div", { class: "role" }, [n.role, up ? `${up.term} 의 ${relName(n) || "하위 개념"}` : null].filter(Boolean).join(" · ")),
-        n.gloss ? h("div", { class: "gloss" }, n.gloss) : null,
-        pts.length ? h("ul", {}, pts.map((x) => h("li", {}, x))) : null,
-        n.def?.quote ? h("button", { class: "go", onclick: () => { closeSummary(); showQuote(n.def); } }, "원문에서 보기 ↗") : null,
-      ].filter(Boolean));
-    };
     const pts = (n) => (Array.isArray(n.points) ? n.points : []).filter((x) => typeof x === "string" && x.trim());
     const card = (n, extra = "") => {
-      const e = h("div", { class: `td-node${extra}`, "data-id": n.id, style: `width:${NW}px`, onclick: () => select(n) },
-        h("div", { class: "td-term" }, n.term), n.gloss ? h("div", { class: "td-gloss" }, n.gloss) : null,
+      const e = h("div", { class: `td-node${extra}${ctx.sel === n.id ? " sel" : ""}${state.editing ? " editable" : ""}`, "data-id": n.id, style: `width:${NW}px`,
+        onclick: () => { if (Date.now() - dragEndAt > 400) ctx.select(n); },
+        onpointerdown: state.editing ? (ev) => ctx.grab(ev, n, e) : null },
+        h("div", { class: "td-term" }, n.term || "(이름 없음)"), n.gloss ? h("div", { class: "td-gloss" }, n.gloss) : null,
         ui.showPoints && pts(n).length ? h("ul", { class: "td-points" }, pts(n).map((x) => h("li", {}, x))) : null);
       els.set(n.id, e); tree.append(e);
       return e;
@@ -1740,6 +2099,257 @@
     return card;
   }
 
+  // ── 중요도 음영: AI(또는 내가) 문단 묶음마다 매긴 세 단계. core 는 진한 음영, some 은 옅은 음영, rare 는 흐린 막 ──
+  // 왼쪽 막대 옆 꼬리표를 누르면 그 등급인 이유가 나오고, 수정 모드면 등급을 바꾸거나 지운다
+  const LEVEL_NAMES = { core: "핵심", some: "가끔", rare: "덜 중요" };
+  const levelNames = () => ({ ...LEVEL_NAMES, ...(TEMPLATES[state.tpl].levels || {}) });
+  // [밝은 바탕, 어두운 바탕]
+  const IMP_COLORS = {
+    core: [{ tint: "rgba(245,158,11,.13)", bar: "#f59e0b", chip: "#fef3c7", ink: "#92400e" }, { tint: "rgba(245,158,11,.15)", bar: "#f59e0b", chip: "#3b2f12", ink: "#fbbf24" }],
+    some: [{ tint: "rgba(100,116,139,.08)", bar: "#94a3b8", chip: "#f1f5f9", ink: "#475569" }, { tint: "rgba(148,163,184,.08)", bar: "#64748b", chip: "#2a2f37", ink: "#cbd5e1" }],
+    rare: [{ tint: "rgba(255,255,255,.55)", bar: "#d1d5db", chip: "#f3f4f6", ink: "#6b7280" }, { tint: "rgba(20,22,26,.5)", bar: "#4b5563", chip: "#23272e", ink: "#9ca3af" }],
+  };
+  // 문단 묶음에서 [i, j] 를 도려낸다(걸친 묶음은 앞뒤 남는 부분만 남긴다)
+  function carve(list, i, j) {
+    return list.flatMap((x) => (x.j < i || x.i > j ? [x]
+      : [...(x.i < i ? [{ ...x, j: i - 1 }] : []), ...(x.j > j ? [{ ...x, i: j + 1 }] : [])]));
+  }
+  // 문단 상자: 웹은 문단 요소 상자, PDF 는 글자 줄을 합친 상자(문단 요소에 크기가 없다)
+  function impBox(el) {
+    if (!PDF) { const r = el.getBoundingClientRect(); return r.height ? { l: r.left, r: r.right, t: r.top, b: r.bottom } : null; }
+    const rg = document.createRange(); rg.selectNodeContents(el);
+    const ls = lineRects(rg);
+    return ls.length ? { l: Math.min(...ls.map((x) => x.left)), r: Math.max(...ls.map((x) => x.right)), t: ls[0].top, b: ls[ls.length - 1].bottom } : null;
+  }
+  // 문단의 첫 줄 상자(화면 좌표). 「실무 핵심」 은 묶음 전체가 아니라 첫 줄(그 묶음의 주제)만 칠한다
+  function firstLineBox(el) {
+    const rg = document.createRange(); rg.selectNodeContents(el);
+    const l = lineRects(rg)[0];
+    return l ? { l: l.left, r: l.right, t: l.top, b: l.bottom } : null;
+  }
+  // 이유 한 줄의 폭(.imp-why 글꼴 기준)을 재서 왼쪽 여백에 들어가는지 본다
+  let measureCtx = null;
+  function textWidth(t) {
+    measureCtx ??= document.createElement("canvas").getContext("2d");
+    measureCtx.font = '400 11px "Pretendard Variable", "Pretendard", "Malgun Gothic", sans-serif';
+    return measureCtx.measureText(t).width;
+  }
+  function drawImp() {
+    if (!state.show.imp || !state.imps.length || state.focus) { if (impSig) { impLayer.replaceChildren(); impSig = ""; } return; }
+    const sx = scrollX, sy = scrollY, dark = host.getAttribute("data-theme") === "dark", names = levelNames();
+    const groups = [];
+    for (const x of state.imps) {
+      const boxes = [];
+      for (let k = x.i; k <= x.j && k < state.paras.length; k++) { const b = impBox(state.paras[k].el); if (b) boxes.push({ l: b.l + sx, r: b.r + sx, t: b.t + sy, b: b.b + sy }); }
+      if (boxes.length) groups.push({ x, boxes });
+    }
+    // 문서 좌표로 그리므로 창을 굴려도 그대로다. 자리가 같으면 다시 만들지 않는다
+    const sig = JSON.stringify([dark, state.tpl, groups.map((g) => [g.x.level, g.x.why, g.boxes.map((b) => [b.l, b.r, b.t, b.b].map(Math.round))])]);
+    if (sig === impSig) return;
+    impSig = sig;
+    const out = [];
+    for (const { x, boxes } of groups) {
+      let c = IMP_COLORS[x.level][dark ? 1 : 0];
+      // 흐린 막은 웹페이지면 그 사이트 바탕색으로 덮는다(어두운 사이트에서 진한 상자처럼 보이지 않게)
+      if (x.level === "rare" && !PDF) c = { ...c, tint: `rgba(${bgOf(state.paras[x.i].el).join(",")},.55)` };
+      const L = Math.min(...boxes.map((b) => b.l)), R = Math.max(...boxes.map((b) => b.r));
+      const T = Math.min(...boxes.map((b) => b.t)), B = Math.max(...boxes.map((b) => b.b));
+      // 「실무 핵심」 은 묶음의 첫 줄(주제)만 칠하고, 묶음 범위는 왼쪽 세로 줄로만 보인다. 나머지 등급은 묶음 전체에 옅게 깐다
+      let tints = boxes;
+      if (x.level === "core") {
+        const f = firstLineBox(state.paras[x.i].el);
+        tints = f ? [{ l: f.l + sx, r: f.r + sx, t: f.t + sy, b: f.b + sy }] : [];
+      }
+      for (const b of tints) out.push(h("div", { class: "imp-tint", style: `left:${b.l - 6}px;top:${b.t - 3}px;width:${b.r - b.l + 12}px;height:${b.b - b.t + 6}px;background:${c.tint}` }));
+      out.push(h("div", { class: "imp-bar", style: `left:${L - 14}px;top:${T - 3}px;height:${B - T + 6}px;background:${c.bar}` }));
+      // 꼬리표는 왼쪽 여백에. 여백이 좁으면(휴대폰 등) 오른쪽 위에
+      const roomLeft = L - sx > 96;
+      out.push(h("div", { class: `imp-chip${roomLeft ? " left" : ""}`, title: x.why || names[x.level],
+        style: `left:${roomLeft ? L - 20 : R - 6}px;top:${T - (roomLeft ? 1 : 21)}px;background:${c.chip};color:${c.ink}${roomLeft ? "" : ";transform:translateX(-100%)"}`,
+        onclick: (e) => { e.stopPropagation(); showImpTools(x, e.clientX, e.clientY); } }, names[x.level]));
+      // 이유는 늘 꼬리표 바로 아래, 꼬리표 오른쪽 끝에 맞춰 둔다. 왼쪽 여백에 한 줄로 들어가면 한 줄로,
+      // 여백이 모자라면 여백 폭 안에서 두 줄까지만 접는다(AI 에는 이유를 15자 안팎으로 쓰게 해 대개 한 줄이다)
+      if (x.why && roomLeft) {
+        const room = L - sx - 32;
+        const fits = textWidth(x.why) + 4 <= room;
+        out.push(h("div", { class: `imp-why${fits ? "" : " wrap"}`, title: x.why,
+          style: `left:${L - 20}px;top:${T + 19}px;color:${c.ink}${fits ? "" : `;width:${Math.max(60, room)}px`}`,
+          onclick: (e) => { e.stopPropagation(); showImpTools(x, e.clientX, e.clientY); } }, x.why));
+      }
+    }
+    impLayer.replaceChildren(...out);
+  }
+  function showImpTools(x, cx, cy) {
+    const names = levelNames();
+    if (!state.editing) { showPop(cx, cy + 12, [h("span", { class: "why" }, `${names[x.level]} — ${x.why || "이유가 적혀 있지 않습니다"}`)]); return; }
+    showPop(cx, cy + 12, [
+      ...(x.why ? [h("span", { class: "why" }, x.why), h("span", { class: "sep" })] : []),
+      ...LEVELS.map((k) => h("button", { "aria-pressed": String(x.level === k), onclick: () => { x.level = k; x.mine = true; hidePop(); afterChange(); } }, names[k])),
+      h("span", { class: "sep" }),
+      h("button", { onclick: () => { state.imps = state.imps.filter((y) => y !== x); hidePop(); afterChange(); } }, "음영 지우기"),
+    ]);
+  }
+  // 수정 모드에서 글자를 고른 다음 「▤ 중요도」: 고른 글자가 걸친 문단들에 등급을 단다(겹치던 음영은 그 범위만 바뀐다)
+  function pickLevel(range) {
+    const i = paraIndexOf(range.startContainer), j = Math.max(i, paraIndexOf(range.endContainer));
+    if (i < 0) { hidePop(); return; }
+    const r = range.getBoundingClientRect(), names = levelNames();
+    const done = (list) => { state.imps = list.sort((p, q) => p.i - q.i); getSelection()?.removeAllRanges(); hidePop(); afterChange(); };
+    showPop(r.left + r.width / 2, r.bottom + 6, [
+      ...LEVELS.map((k) => h("button", { onclick: () => done([...carve(state.imps, i, j), { i, j, level: k, why: "", mine: true }]) }, names[k])),
+      h("span", { class: "sep" }),
+      h("button", { onclick: () => done(carve(state.imps, i, j)) }, "음영 지우기"),
+    ]);
+  }
+
+  // ── 설명 옮기기: 수정 모드에서 카드 왼쪽 손잡이(⋮⋮)를 끌어 다른 문단 아래·다른 설명 앞뒤로 옮긴다 ──
+  // 놓을 자리는 파란 줄로 보인다. 화면 위아래 끝으로 끌면 그쪽으로 굴러간다. Esc 로 그만둔다
+  function scrollerOf(el) {
+    for (let n = el?.parentElement; n && n !== document.body; n = n.parentElement) {
+      const st = getComputedStyle(n);
+      if (/(auto|scroll)/.test(st.overflowY) && n.scrollHeight > n.clientHeight + 1) return n;
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+  function startBoxDrag(e, b, card) {
+    if (e.button > 0 || boxDrag) return;
+    e.preventDefault(); e.stopPropagation();
+    hidePop(); hideKnobs();
+    boxDrag = { b, card, x: e.clientX, y: e.clientY, target: null, scroller: scrollerOf(b.el), raf: 0 };
+    card.classList.add("dragging");
+    dragGhost.replaceChildren(h("b", {}, b.label), " ", short(b.text || "(빈 설명)"));
+    dragGhost.hidden = false;
+    addEventListener("pointermove", boxDragMove, true);
+    addEventListener("pointerup", boxDragEnd, true);
+    addEventListener("pointercancel", boxDragStop, true);
+    addEventListener("keydown", boxDragKey, true);
+    boxDragFrame();
+  }
+  function boxDragMove(e) { if (!boxDrag) return; e.preventDefault(); boxDrag.x = e.clientX; boxDrag.y = e.clientY; }
+  function boxDragKey(e) { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); boxDragStop(); } }
+  function boxDragFrame() {
+    const d = boxDrag;
+    if (!d) return;
+    Object.assign(dragGhost.style, { left: `${Math.min(d.x + 14, innerWidth - 250)}px`, top: `${d.y + 16}px` });
+    // 화면(또는 PDF 처럼 안쪽에서 굴러가는 칸) 위아래 끝에 가까우면 그쪽으로 굴린다
+    const whole = d.scroller === document.scrollingElement || d.scroller === document.documentElement;
+    const sr = whole ? { top: 0, bottom: innerHeight } : d.scroller.getBoundingClientRect();
+    const top = Math.max(0, sr.top), bot = Math.min(innerHeight, sr.bottom), edge = 60;
+    if (d.y < top + edge) d.scroller.scrollTop -= Math.ceil((top + edge - d.y) / 4);
+    else if (d.y > bot - edge) d.scroller.scrollTop += Math.ceil((d.y - (bot - edge)) / 4);
+    const t = d.target = dropTarget(d);
+    if (t) { Object.assign(dragLine.style, { left: `${t.l}px`, top: `${t.y - 1.5}px`, width: `${Math.max(40, t.r - t.l)}px` }); dragLine.hidden = false; }
+    else dragLine.hidden = true;
+    d.raf = requestAnimationFrame(boxDragFrame);
+  }
+  // 놓을 자리: 다른 설명 카드 위면 그 앞이나 뒤, 아니면 가장 가까운 문단 바로 아래(그 문단의 설명들 맨 앞)
+  function dropTarget({ x, y, b }) {
+    for (const [id, el] of cardEls) {
+      const r = el.getBoundingClientRect();
+      if (!r.height || y < r.top - 4 || y > r.bottom + 4 || x < r.left - 40 || x > r.right + 40) continue;
+      if (id === b.id) return null; // 제자리
+      const other = state.boxes.find((o) => o.id === id);
+      if (!other) continue;
+      const before = y < (r.top + r.bottom) / 2;
+      return { box: other, before, l: r.left, r: r.right, y: before ? r.top - 3 : r.bottom + 3 };
+    }
+    let best = null, bestD = Infinity;
+    for (const p of state.paras) {
+      const r = p.el.getBoundingClientRect();
+      if (!r.height || r.bottom < -300 || r.top > innerHeight + 300) continue;
+      const dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+      const dx = x < r.left ? r.left - x : x > r.right ? x - r.right : 0;
+      const dist = dy + dx * 0.3 + (y < r.top ? 12 : 0); // 설명은 문단 아래에 붙으므로 문단 위쪽보다 아래쪽을 조금 더 반긴다
+      if (dist < bestD) { bestD = dist; best = { p, r }; }
+    }
+    return best && { para: best.p, l: best.r.left, r: best.r.right, y: best.r.bottom + 3 };
+  }
+  function boxDragStop() {
+    const d = boxDrag;
+    if (!d) return null;
+    cancelAnimationFrame(d.raf);
+    boxDrag = null;
+    d.card.classList.remove("dragging");
+    dragLine.hidden = true; dragGhost.hidden = true;
+    removeEventListener("pointermove", boxDragMove, true);
+    removeEventListener("pointerup", boxDragEnd, true);
+    removeEventListener("pointercancel", boxDragStop, true);
+    removeEventListener("keydown", boxDragKey, true);
+    return d;
+  }
+  function boxDragEnd(e) {
+    const d = boxDragStop();
+    dragEndAt = Date.now();
+    if (!d?.target) return;
+    e.preventDefault();
+    const { b, target: t } = d;
+    state.boxes = state.boxes.filter((x) => x !== b);
+    if (t.box) { b.el = t.box.el; state.boxes.splice(state.boxes.indexOf(t.box) + (t.before ? 0 : 1), 0, b); }
+    else {
+      b.el = t.para.el;
+      const i = state.boxes.findIndex((x) => x.el === b.el);
+      if (i < 0) state.boxes.push(b); else state.boxes.splice(i, 0, b);
+    }
+    b.mine = true; // 내가 옮긴 설명은 AI 답을 새로 붙여도 남는다
+    afterChange();
+  }
+
+  // ── 표시 범위 고치기: 수정 모드에서 표시를 누르면 처음·끝에 동그란 손잡이가 생긴다. 끌면 그 글자까지 표시가 늘거나 준다 ──
+  // 손잡이는 글줄 위(처음)·아래(끝)에 달려 있고, 끄는 동안에는 손잡이가 가리키던 글줄 높이에서 글자 자리를 찾는다(손가락에 글자가 가리지 않게)
+  const knobSize = () => (matchMedia("(pointer: coarse)").matches ? 18 : 12);
+  function showKnobs(m) { knobFor = m; drawKnobs(); }
+  function hideKnobs() { if (knobDrag) return; knobFor = null; for (const k of knobs) k.hidden = true; }
+  function drawKnobs() {
+    const m = knobFor;
+    if (!m) return;
+    if (!state.editing || !state.marks.includes(m)) { knobFor = null; for (const k of knobs) k.hidden = true; return; }
+    const lines = lineRects(m.range);
+    if (!lines.length) { for (const k of knobs) k.hidden = true; return; }
+    const a = lines[0], z = lines[lines.length - 1], K = knobSize();
+    Object.assign(knobs[0].style, { left: `${a.left - 11}px`, top: `${a.top - K}px`, height: `${a.bottom - a.top + K}px` });
+    Object.assign(knobs[1].style, { left: `${z.right - 11}px`, top: `${z.top}px`, height: `${z.bottom - z.top + K}px` });
+    for (const k of knobs) k.hidden = false;
+  }
+  function startKnob(e, side) {
+    const m = knobFor;
+    if (!m || e.button > 0) return;
+    e.preventDefault(); e.stopPropagation();
+    const lines = lineRects(m.range), L = side === "start" ? lines[0] : lines[lines.length - 1];
+    if (!L) return;
+    knobDrag = { m, side, dx: (side === "start" ? L.left : L.right) - e.clientX, dy: (L.top + L.bottom) / 2 - e.clientY, quote: m.quote };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    hidePop();
+    addEventListener("pointermove", knobMove, true);
+    addEventListener("pointerup", knobEnd, true);
+    addEventListener("pointercancel", knobEnd, true);
+  }
+  function knobMove(e) {
+    const d = knobDrag;
+    if (!d) return;
+    e.preventDefault();
+    const c = caretAt(e.clientX + d.dx, e.clientY + d.dy);
+    if (!c || c.node?.nodeType !== 3 || !state.root.contains(c.node)) return;
+    const r = document.createRange(), cur = d.m.range;
+    try {
+      if (d.side === "start") { r.setStart(c.node, c.offset); r.setEnd(cur.endContainer, cur.endOffset); }
+      else { r.setStart(cur.startContainer, cur.startOffset); r.setEnd(c.node, c.offset); }
+    } catch { return; }
+    if (r.collapsed || !squash(r.toString())) return; // 처음이 끝을 넘어가면 그대로 둔다
+    d.m.range = r;
+    paint(); drawKnobs();
+  }
+  function knobEnd() {
+    const d = knobDrag;
+    if (!d) return;
+    knobDrag = null; dragEndAt = Date.now();
+    removeEventListener("pointermove", knobMove, true);
+    removeEventListener("pointerup", knobEnd, true);
+    removeEventListener("pointercancel", knobEnd, true);
+    const q = tidy(d.m.range.toString());
+    if (q !== d.quote) { d.m.quote = q; d.m.mine = true; afterChange(); }
+    drawKnobs();
+  }
+
   // ── 수정 모드: 글자를 골라 표시·설명 달기, 표시를 눌러 바꾸기·지우기 ──
   function setEditing(on) {
     state.editing = on;
@@ -1780,10 +2390,12 @@
         tab = "boxes"; afterChange();
         openCard(b.id)?.querySelector(".txt")?.focus();
       } }, "+ 설명"),
+      h("button", { title: "고른 글자가 걸친 문단에 중요도 음영을 답니다", onclick: () => pickLevel(range) }, "▤ 중요도"),
       h("button", { title: "이 부분을 AI 에게 더 자세히(예시 포함) 묻는 요청문을 복사합니다", onclick: () => deepAsk(range) }, "🔎 자세히 묻기"),
     ]);
   }
   function showMarkTools(m, x, y) {
+    showKnobs(m);
     const lines = lineRects(m.range);
     const lastLine = lines[lines.length - 1];
     showPop(x, (lastLine ? lastLine.bottom : y) + 6, [
@@ -1852,18 +2464,20 @@
     }, 0);
   }
   function onClick(e) {
+    if (!state.editing && !pop.hidden && !e.composedPath().includes(host)) hidePop();
     if (!state.editing || e.composedPath().includes(host) || inNote(e)) return;
+    if (Date.now() - dragEndAt < 400) return;
     const sel = getSelection();
     if (sel && !sel.isCollapsed) return;
     const m = markAt(e.clientX, e.clientY);
-    if (!m) { hidePop(); return; }
+    if (!m) { hidePop(); hideKnobs(); return; }
     e.preventDefault(); e.stopPropagation(); // 표시가 링크 위에 있어도 페이지를 옮기지 않는다
     showMarkTools(m, e.clientX, e.clientY);
   }
   function onKey(e) {
     if (e.key !== "Escape") return;
     if (sheet) { closeSummary(); return; }
-    hidePop(); if (state.focus) setFocus(state.focus);
+    hidePop(); hideKnobs(); if (state.focus) setFocus(state.focus);
   }
   function onScroll() { queueDraw(); if (!pop.hidden && pop.dataset.keep !== "1") hidePop(); }
 
@@ -1876,15 +2490,24 @@
   // 주소는 정리한 KEY 만 보낸다(지금 주소창의 전체 주소는 보내지 않는다)
   const msgFor = (type, id, extra = {}) => ({ nl: "page", type, id, key: KEY, title: document.title, ...extra });
   function setSaved(text, err = false) { savedMsg.className = err ? "msg err" : "msg"; savedMsg.textContent = text; }
-  function openStore() {
+  function openStore({ quiet = false } = {}) {
     if (LOCAL) { connect(); return null; }
     if (!BASE) return null;
     // 로컬 시험 서버에서 불렀으면 시험용 저장 창 이름을 따로 써서 공개용 저장 창을 덮지 않는다
     const storeName = /^http:\/\/(localhost|127\.0\.0\.1)[:/]/.test(BASE) ? "notelayer-store-dev" : "notelayer-store";
     try { conn.win = window.open(`${BASE}store.html`, storeName, `popup=yes,width=380,height=560,left=${Math.max(0, screen.availWidth - 400)},top=60`); } catch { conn.win = null; }
-    if (!conn.win) setSaved("팝업이 막혀 저장 창을 열지 못했습니다. 주소창 오른쪽에서 이 사이트의 팝업을 허용해 주세요.", true);
+    if (!conn.win) {
+      if (!quiet) setSaved("팝업이 막혀 저장 창을 열지 못했습니다. 주소창 오른쪽에서 이 사이트의 팝업을 허용해 주세요.", true);
+      renderStore();
+      return null;
+    }
     connect();
     return conn.win;
+  }
+  // 작은 상자의 「저장 창」 버튼: 열려 있으면 그 창을 앞으로 가져오고, 닫혀 있으면 새로 연다
+  function goStore() {
+    if (conn.win && !conn.win.closed) { try { conn.win.focus(); return; } catch {} }
+    openStore();
   }
   // 저장 창이 다 뜰 때까지 인사를 되풀이한다(뜨기 전에 보낸 메시지는 버려진다)
   function connect() {
@@ -1941,8 +2564,26 @@
     if (d.type === "error") p.no(new Error(d.message)); else p.ok(d);
   }
   // 연결되면: 저장하지 않은 변경이 있으면 보내고, 아직 아무 표시도 없으면 저장본을 꺼내 칠한다
+  // 저장 창은 필요할 때만 열리므로, 처음 연결되기 전에 답을 적용·수정했을 수 있다.
+  // 그때 이 페이지의 예전 저장본이 있으면 말없이 덮어쓰지 않고 한 번 묻는다(이 연결에서 한 번만)
+  let storeSynced = false;
   async function onStoreReady() {
-    if (conn.dirty) { save(); return; }
+    const first = !storeSynced;
+    storeSynced = true;
+    if (conn.dirty) {
+      if (first && !LOCAL) {
+        try {
+          const r = await send("load");
+          if (r.record?.data && !confirm("이 페이지에 예전에 저장한 표시가 있습니다. 지금 표시로 바꿔 저장할까요?\n(취소하면 예전에 저장한 표시를 불러옵니다)")) {
+            clearTimeout(saveTimer); conn.dirty = false;
+            await loadSaved({ replace: true });
+            renderStore();
+            return;
+          }
+        } catch {}
+      }
+      save(); return;
+    }
     if (hasData()) return;
     await loadSaved();
   }
@@ -1952,12 +2593,12 @@
       const r = await send("load");
       if (r.record?.data && (replace || !hasData())) {
         const data = r.record.data;
-        if (replace) { state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.concepts = null; state.trs = new Map(); }
+        if (replace) { state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.imps = []; state.concepts = null; state.trs = new Map(); }
         if (TEMPLATES[data.tpl]) { state.tpl = data.tpl; tplSelect.value = data.tpl; }
         const res = apply(data, { restored: true });
         setSaved(`${replace ? "저장 창에서 불러온 파일로 다시 칠했습니다" : "저장해 둔 표시를 불러왔습니다"} · ${fmtTime(r.record.savedAt)}${r.from === "folder" ? " · 폴더의 파일에서" : ""}`
           + `${res?.moved ? ` · 글이 바뀌어 자리를 다시 잡은 표시 ${res.moved}개` : ""}${res?.orphans ? ` · 제자리를 잃은 표시 ${res.orphans}개` : ""}`);
-      } else if (!r.record) setSaved("이 페이지에 저장한 표시가 아직 없습니다. 답을 적용하거나 고치면 자동으로 저장됩니다.");
+      } else if (!r.record && !HOST?.ephemeral) setSaved("이 페이지에 저장한 표시가 아직 없습니다. 답을 적용하거나 고치면 자동으로 저장됩니다.");
     } catch (err) {
       setSaved(`불러오지 못했습니다: ${err.message}`, true);
     }
@@ -1975,19 +2616,23 @@
       storeOpenBtn.hidden = true;
       storeState.className = conn.ready ? "msg" : "msg err";
       storeState.textContent = conn.ready
-        ? `● 이 PC 에 저장합니다${conn.folder ? "(연결한 폴더에도 파일로)" : ""}. 서버로 보내지 않습니다.`
+        ? HOST?.ephemeral ? "예시 화면입니다. 표시·설명을 고쳐 볼 수 있지만 저장되지 않고, 새로고침하면 처음 상태로 돌아갑니다."
+        : `● 이 PC 에 저장합니다${conn.folder ? "(연결한 폴더에도 파일로)" : ""}. 서버로 보내지 않습니다.`
         : "○ 저장소를 여는 중…";
       return;
     }
     const live = conn.win && !conn.win.closed;
     storeLive = !!(conn.ready && live);
     renderMini();
-    storeOpenBtn.hidden = !BASE || !!(conn.ready && live);
+    // 저장 창이 닫혀 있을 때는 안내 줄을 통째로 숨긴다(여는 버튼은 작은 상자의 「저장 창」).
+    // 팝업이 막혔다는 알림처럼 따로 남긴 말이 있을 때만 보인다
+    saveBar.hidden = !!BASE && !live && !savedMsg.textContent;
+    storeOpenBtn.hidden = true;
     storeState.className = conn.ready && live ? "msg" : "msg err";
     storeState.textContent = !BASE ? "저장 창 주소를 알 수 없어 저장할 수 없습니다. 즐겨찾기 버튼으로 다시 열어 주세요."
       : conn.ready && live ? `● 저장 창과 연결됨 — 이 PC 에 저장합니다${conn.folder ? "(고른 폴더에도 파일로)" : ""}. 서버로 보내지 않고, 다른 사이트는 이 메모를 볼 수 없습니다.`
       : live ? "○ 저장 창과 연결하는 중…"
-      : `○ 저장 창이 닫혀 있어 저장되지 않습니다${conn.dirty ? "(저장하지 않은 변경이 있습니다)" : ""}.`;
+      : "";
   }
 
   function destroy() {
@@ -2008,7 +2653,7 @@
     closeSummary(); host.remove(); pageStyle.remove();
     delete window.NL_OVERLAY;
   }
-  function onResize() { placePanel(); queueDraw(); }
+  function onResize() { placePanel(); placeMini(); renderOverview(); queueDraw(); }
   function onPageHide() { if (state.popup) try { state.popup.close(); } catch {} }
 
   // ── 시작 ──
@@ -2047,15 +2692,15 @@
     conn.win = window.__NL_STORE_WIN || null;
     try { delete window.__NL_STORE_WIN; } catch {}
     conn.watchT = setInterval(() => { if (conn.ready && (!conn.win || conn.win.closed)) { conn.ready = false; renderStore(); } }, 2000);
-    // 저장 창을 먼저 열지 않는 예전 즐겨찾기로 불렀으면 여기서 연다. 누른 지 몇 초 안이라 대개 팝업 차단에 걸리지 않는다.
-    // 막히면 openStore 가 「저장 창 열기」를 누르라고 알린다
-    if (!conn.win && BASE) openStore(); else connect();
+    // 즐겨찾기 버튼이 누르는 순간 열어 둔 저장 창이 있으면 바로 잇는다. 저장 창을 먼저 열지 않는 예전 즐겨찾기로 불렀으면 여기서 연다.
+    // 누른 지 몇 초 안이라 대개 팝업 차단에 걸리지 않는다. 막히면 저장할 때나 「저장 창」 버튼으로 다시 연다
+    if (!conn.win && BASE) openStore({ quiet: true }); else connect();
   }
 
   window.NL_OVERLAY = {
-    // 버튼을 다시 누르면: 저장 창이 닫혀 있으면 다시 열고 패널을 보이고, 아니면 패널을 접고 편다
+    // 버튼을 다시 누르면: 저장 창이 닫혀 있으면 다시 열고, 아니면 패널(작은 상자)을 숨기고 보인다
     toggle: () => {
-      if (!LOCAL && BASE && (!conn.win || conn.win.closed)) { openStore(); setMin(false); return; }
+      if (!LOCAL && BASE && (!conn.win || conn.win.closed)) { openStore(); if (COMPACT) host.style.display = ""; else setMin(false); return; }
       if (COMPACT) { host.style.display = host.style.display === "none" ? "" : "none"; return; }
       if (state.popup) state.popup.focus(); else setMin(!panel.hasAttribute("data-min"));
     },
@@ -2080,7 +2725,7 @@
         record: { v: 1, tpl: state.tpl, ...serialize() }, paragraphs: state.paras.map((x) => x.text),
       };
     },
-    restore: (data) => { state.marks = []; state.orphans = []; state.boxes = []; state.concepts = null; state.trs = new Map(); return apply(data, { restored: true }); },
+    restore: (data) => { state.marks = []; state.orphans = []; state.boxes = []; state.imps = []; state.concepts = null; state.trs = new Map(); return apply(data, { restored: true }); },
     destroy,
   };
 })();
