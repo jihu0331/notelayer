@@ -93,7 +93,7 @@
     const cur = current && pages.find((p) => p.key === current.key);
     const opener = window.opener;
     if (changed("cur", JSON.stringify([current?.key, current?.title, !!opener, opener?.closed, cur?.savedAt, cur && counts(cur.data)]))) $("curBody").replaceChildren(
-      !current ? (opener ? "표시 층과 연결을 기다리는 중…" : "웹페이지에서 「이 페이지 위에 표시하기」를 누르면 이 창이 그 페이지와 연결됩니다.")
+      !current ? (opener ? "표시 층과 연결을 기다리는 중…" : "웹페이지에서 「notelayer 켜기」를 누르면 이 창이 그 페이지와 연결됩니다.")
         : el("div", {}, el("div", { class: "title" }, current.title || current.key),
           el("div", { class: cur ? "muted ok" : "muted" }, cur
             ? `저장됨 · ${fmt(cur.savedAt)} · 표시 ${counts(cur.data).marks}개 · 설명 ${counts(cur.data).boxes}개`
@@ -248,7 +248,7 @@
     renderChoices();
     if (other && !n) status(`고른 파일은 지금 페이지가 아닌 다른 페이지의 기록입니다. 아래에서 어떻게 할지 골라 주세요.`);
     else status(`파일 ${total}개 중 ${n}개 페이지의 표시를 불러왔습니다${n + other < total ? "(notelayer 저장 파일이 아니거나 더 새 기록이 이미 있는 것은 건너뛰었습니다)" : ""}.`
-      + (live ? " 지금 연결된 페이지에 바로 칠했습니다." : IMPORT_TAB && here ? " 열려 있는 페이지에 바로 칠했습니다. 이 탭은 닫아도 됩니다." : n ? " 그 페이지를 열고 「이 페이지 위에 표시하기」를 누르면 칠해집니다." : "")
+      + (live ? " 지금 연결된 페이지에 바로 칠했습니다." : IMPORT_TAB && here ? " 열려 있는 페이지에 바로 칠했습니다. 이 탭은 닫아도 됩니다." : n ? " 그 페이지를 열고 「notelayer 켜기」를 누르면 칠해집니다." : "")
       + (other ? ` 다른 페이지의 기록 ${other}개는 아래에서 골라 주세요.` : ""), n === 0 && !other);
     render();
   };

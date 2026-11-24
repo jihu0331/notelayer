@@ -1,7 +1,7 @@
 // notelayer 로컬 시험 서버 — 고친 파일을 공개 데모에 올리지 않고 바로 시험한다.
 //   node dev/serve.js            (기본 포트 5199)
 //   node dev/serve.js 5300       (포트 바꾸기)
-// 브라우저로 http://localhost:5199 를 열고 「+ 새 문서 → 웹페이지」의 「이 페이지 위에 표시하기 (시험용)」을
+// 브라우저로 http://localhost:5199 를 열고 첫 화면 맨 위의 「notelayer 켜기 (시험용)」을
 // 즐겨찾기 막대로 한 번 끌어다 두면, 그다음부터는 파일을 고치고 블로그에서 그 즐겨찾기를 다시 누르기만 하면 된다.
 //
 // - 이 PC 안(127.0.0.1)에서만 접속된다
@@ -24,7 +24,7 @@ const TYPES = {
 const NO_CACHE = { "cache-control": "no-store" }; // 고친 파일이 바로 보이게
 
 // 내줄 파일 목록(이름에 점으로 시작하는 조각·상위 폴더 이동이 들어갈 수 없는 모양만)
-const SERVE = /^\/(?:index\.html|app\.js|app\.css|import\.js|prompt\.js|templates\.js|overlay\.js|store\.html|store\.js|storage\.js|vendor\.js|pdf\.html|pdfnote\.js|documents\/[A-Za-z0-9_-]+\.js|docs\/[A-Za-z0-9_-]+\.(?:png|pdf))$/;
+const SERVE = /^\/(?:index\.html|app\.js|app\.css|import\.js|prompt\.js|templates\.js|overlay\.js|store\.html|store\.js|storage\.js|vendor\.js|pdf\.html|pdfnote\.js|example\.html|example\.js|documents\/[A-Za-z0-9_-]+\.js|docs\/[A-Za-z0-9_-]+\.(?:png|pdf))$/;
 
 http.createServer((req, res) => {
   let rel;

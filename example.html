@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>notelayer 예시</title>
+<meta name="description" content="notelayer 를 읽던 페이지에서 켰을 때의 모습을 예시 글로 보여 준다">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  /* 평범한 블로그·문서 페이지처럼 보이게 한다. 그 위에 notelayer 표시 층이 실제로 켠 것과 같은 모습으로 얹힌다 */
+  :root { --bg: #ffffff; --ink: #1f2328; --muted: #6b7280; --line: #e5e7eb; --accent: #f59e0b; --soft: #f6f7f9; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.85 "IBM Plex Sans KR", "Malgun Gothic", sans-serif; }
+  .bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 16px;
+    background: rgba(255,255,255,.95); border-bottom: 1px solid var(--line); font-size: 14px; line-height: 1.5; }
+  .bar .brand { font-weight: 700; color: var(--ink); text-decoration: none; }
+  .bar .tag { padding: 1px 8px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: 12px; font-weight: 600; }
+  .bar .switch a { color: var(--muted); text-decoration: none; margin-right: 10px; }
+  .bar .switch a[aria-current="page"] { color: var(--ink); font-weight: 600; text-decoration: underline; text-underline-offset: 4px; }
+  .note { max-width: 688px; margin: 18px auto 0; padding: 10px 14px; border-radius: 10px; background: var(--soft); color: var(--muted); font-size: 13.5px; line-height: 1.6; }
+  .note b { color: var(--ink); }
+  article { max-width: 720px; margin: 28px auto 120px; padding: 0 16px; }
+  article h1 { font-size: 28px; line-height: 1.4; margin: 0 0 6px; }
+  article .src { color: var(--muted); font-size: 13px; margin: 0 0 28px; }
+  article p { margin: 0 0 22px; }
+  .err { color: #b42318; }
+  .detail { max-width: 688px; margin: 10px auto 0; display: flex; align-items: center; gap: 0; font-size: 13px; line-height: 1.4; }
+  .detail .lab { color: var(--muted); margin-right: 10px; }
+  .detail button { font: inherit; border: 1px solid #d1d5db; background: #fff; color: var(--ink); padding: 4px 12px; cursor: pointer; margin-left: -1px; }
+  .detail button:first-of-type { border-radius: 8px 0 0 8px; margin-left: 0; }
+  .detail button:last-of-type { border-radius: 0 8px 8px 0; }
+  .detail button[aria-pressed="true"] { background: #111827; color: #fff; border-color: #111827; position: relative; }
+  @media (max-width: 600px) { body { font-size: 15.5px; } article h1 { font-size: 23px; } }
+  /* 첫 화면에 끼워 보일 때(?embed=1): 위쪽 막대는 첫 화면의 탭이 대신한다 */
+  html.embed .bar { display: none; }
+  /* 끼운 화면은 폭이 좁아 오른쪽 위 notelayer 작은 상자가 제목을 가리므로, 안내 글은 왼쪽에 두고 본문을 조금 내린다 */
+  html.embed .note { margin: 14px auto 0 24px; max-width: calc(100% - 430px); min-width: 260px; }
+  html.embed .detail { margin: 10px auto 0 24px; }
+  /* 왼쪽 여백을 넉넉히 둬서 중요도 꼬리표 아래 이유가 한 줄로 들어가게 한다 */
+  html.embed article { margin: 40px auto 60px 190px; max-width: 640px; }
+  @media (max-width: 900px) { html.embed article { margin: 40px auto 60px; } }
+</style>
+</head>
+<body>
+<div class="bar">
+  <a class="brand" href="./">notelayer</a>
+  <span class="tag">예시</span>
+  <span class="switch" id="switch"></span>
+</div>
+<p class="note" id="note">이 화면은 읽던 웹페이지에서 <b>「notelayer 켜기」</b>를 눌렀을 때의 모습입니다. 오른쪽 위 작은 상자에서 표시를 켜고 끄거나, 「요약 보기」로 개념 구조도를 볼 수 있습니다. 고쳐 봐도 저장되지 않습니다.</p>
+<div class="detail" id="detail"></div>
+<article id="doc"><p class="src">예시를 불러오는 중…</p></article>
+<script>if (new URLSearchParams(location.search).has("embed")) document.documentElement.classList.add("embed");</script>
+<script src="example.js"></script>
+</body>
+</html>
