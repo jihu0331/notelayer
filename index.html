@@ -4,48 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>notelayer</title>
-<meta name="description" content="원문은 그대로, 그 위에 목적별 템플릿으로 표시·설명·내 메모를 얹어 읽는 문서 보기">
+<meta name="description" content="읽던 웹페이지와 PDF 원본은 그대로 두고, 그 위에 핵심어·중요 문장·쉬운 설명을 얹어 읽는다">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&family=Gowun+Dodum&family=IBM+Plex+Sans+KR:wght@400;600&family=Noto+Serif+KR:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="app.css">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="home.css">
 </head>
-<body data-template="exam">
-<div class="bar" id="bar">
+<body>
+<div class="bar">
   <span class="brand">notelayer</span>
-  <div class="pick">
-    <select id="docSelect" aria-label="문서"></select>
-    <button class="icon-btn" id="newDocBtn" title="새 문서 (글 붙여 넣기·파일·웹페이지)" aria-label="새 문서">+</button>
-  </div>
-  <label class="pick tpl"><span class="pick-label">템플릿</span><select id="tplSelect" aria-label="템플릿"></select></label>
   <a class="act" href="pdf.html" title="PDF 원본을 이 PC 에 보관하고, 원래 모양 그대로 펼쳐 그 위에 표시·설명·메모를 남깁니다">PDF 노트</a>
-  <span class="spacer"></span>
-  <button class="act primary" id="aiBtn" title="쓰는 LLM 으로 지금 문서에 표시·설명·요약 만들기">AI 표시 만들기</button>
-  <button class="switch" id="editSwitch" role="switch" aria-checked="false"><span class="track"></span>수정 모드</button>
-  <div class="more">
-    <button class="icon-btn" id="moreBtn" aria-haspopup="menu" aria-expanded="false" aria-label="더 보기" title="보기·파일">⋯</button>
-    <div class="menu" id="moreMenu" role="menu" hidden>
-      <div class="menu-title">보기</div>
-      <label><input type="checkbox" id="layerMarks" checked> AI 표시</label>
-      <label><input type="checkbox" id="layerBoxes" checked> AI 설명</label>
-      <label><input type="checkbox" id="layerMine" checked> 내 표시·메모</label>
-      <label id="trLabel"><input type="checkbox" id="layerTr" checked> 번역</label>
-      <button class="menu-item" id="expandAll">설명 모두 펼치기</button>
-      <div class="menu-sep"></div>
-      <div class="menu-title">파일</div>
-      <button class="menu-item" id="printBtn">PDF로 저장</button>
-      <button class="menu-item" id="exportBtn" title="넣은 문서와 고친 내용을 파일로 백업">내보내기 (백업)</button>
-      <button class="menu-item" id="importBtn" title="백업 파일 불러오기">불러오기</button>
-      <input type="file" id="importFile" accept="application/json" hidden>
-    </div>
-  </div>
-</div>
-<div class="editbar" id="editbar">
-  <span>수정 모드 — 표시를 누르면 종류를 바꾸거나 지울 수 있고, 글자를 끌어 고르면 새 표시나 메모를 달 수 있습니다. 설명 상자와 메모는 글을 누르면 치는 대로 바로 바뀌고, 꼬리표를 누르면 설명 종류를 바꿀 수 있습니다. 원문 글자는 바뀌지 않습니다.</span>
-  <button id="resetBtn">이 문서 처음 상태로</button>
-  <button id="deleteDocBtn" hidden>이 문서 지우기</button>
 </div>
 
-<!-- 핵심 입구: 읽던 웹페이지 위에 바로 표시하는 즐겨찾기 버튼. 첫 화면 맨 위에 둔다 -->
+<!-- 핵심 입구: 읽던 웹페이지 위에 바로 표시하는 즐겨찾기 버튼 -->
 <section class="hero" id="hero" aria-labelledby="heroTitle">
   <div class="hero-main">
     <div class="hero-text">
@@ -65,8 +35,7 @@
   <button class="hero-fold" id="heroFold" type="button" aria-expanded="true">사용법 접기</button>
 </section>
 
-<!-- 예시: 읽던 페이지에서 켰을 때와 같은 모습(지금 화면 방식)으로 연다 -->
-<!-- 첫 화면에 예시를 바로 펼친다. 예시 화면(example.html)을 그대로 끼워, 읽던 페이지에서 켰을 때와 같은 모습을 보여 준다 -->
+<!-- 예시: 예시 화면(example.html)을 그대로 끼워, 읽던 페이지에서 켰을 때와 같은 모습을 보여 준다 -->
 <section class="examples" aria-label="예시">
   <div class="ex-tabs" role="tablist">
     <span class="ex-label">예시</span>
@@ -76,78 +45,10 @@
     <a class="ex-open" id="exOpen" href="example.html?t=exam" target="_blank" rel="noopener">새 탭에서 크게 ↗</a>
   </div>
   <iframe class="ex-frame" id="exFrame" src="example.html?t=exam&amp;embed=1" title="notelayer 예시" loading="eager"></iframe>
-  <p class="no-docs-note">내 글을 직접 넣어 보려면 위쪽 막대의 <b>+</b> 를 누르세요. 넣은 문서는 여기 아래에 열립니다.</p>
 </section>
-
-<main>
-  <div class="meta" id="meta"></div>
-  <div class="legend" id="legend"></div>
-  <article id="doc"></article>
-</main>
-<aside class="side" id="side" hidden aria-label="표시 모아 보기"></aside>
-<div class="pop" id="pop" role="dialog"></div>
-<div class="selmenu" id="selmenu"></div>
-
-<div class="explain">
-  원문은 고치지 않고 그 위에 템플릿별 표시·설명·번역·내 메모 층만 얹습니다. "+ 새 문서"로 내 글·파일·웹페이지를 넣고, "AI 표시 만들기"로 쓰는 LLM 에 표시와 설명을 맡길 수 있습니다.
-  넣은 문서와 고친 내용은 이 브라우저에만 저장되니 "내보내기"로 백업하세요.
-</div>
-
-<!-- 새 문서 넣기 -->
-<dialog id="newDocDialog" class="dlg">
-  <form method="dialog" class="dlg-head"><strong>새 문서</strong><button class="dlg-x" aria-label="닫기">×</button></form>
-  <div class="tabs" role="tablist">
-    <button class="tab" data-tab="paste" aria-selected="true">글 붙여 넣기</button>
-    <button class="tab" data-tab="file" aria-selected="false">파일</button>
-    <button class="tab" data-tab="web" aria-selected="false">웹페이지</button>
-  </div>
-  <section class="pane" data-pane="paste">
-    <label class="field">제목 <input id="ndTitle" placeholder="비우면 첫 줄을 제목으로 씁니다"></label>
-    <label class="field">언어
-      <select id="ndLang"><option value="auto">자동으로 알아내기</option><option value="ko">한국어</option><option value="en">영어</option><option value="ja">일본어</option><option value="zh">중국어</option><option value="other">그 밖의 언어</option></select>
-    </label>
-    <label class="field">본문 <textarea id="ndText" rows="12" placeholder="여기에 글을 붙여 넣으세요. 빈 줄로 문단을 나눕니다."></textarea></label>
-    <div class="dlg-foot"><span class="dlg-msg" id="ndMsg"></span><button class="act primary" id="ndCreate">문서 만들기</button></div>
-  </section>
-  <section class="pane" data-pane="file" hidden>
-    <p class="help">텍스트(.txt), 마크다운(.md), PDF(.pdf), 워드(.docx) 파일에서 글자를 뽑아 "글 붙여 넣기" 칸에 채웁니다. 확인한 다음 문서를 만드세요.
-      파일은 이 브라우저 안에서만 읽고 어디에도 올리지 않습니다. 스캔한 PDF·사진 속 글씨는 읽지 못하고, 표·그림·두 단 편집은 문단이 어긋날 수 있습니다.</p>
-    <label class="drop" id="ndDrop"><input type="file" id="ndFile" accept=".txt,.md,.markdown,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
-      <span>파일을 고르거나 여기로 끌어다 놓으세요</span></label>
-    <div class="dlg-msg" id="ndFileMsg"></div>
-  </section>
-  <section class="pane" data-pane="web" hidden>
-    <p class="help">아래 버튼을 브라우저 즐겨찾기 막대로 <b>끌어다 놓으세요</b>. 읽던 웹페이지에서 그 즐겨찾기를 누르면 본문을 추려 notelayer 새 창의 새 문서로 보냅니다. 확장 프로그램은 필요 없습니다.</p>
-    <p class="bm-wrap"><a id="bookmarklet" class="bm" href="#">notelayer로 보내기</a></p>
-    <p class="help" id="bmNote"></p>
-    <p class="help"><b>원래 페이지 위에 바로 표시하려면</b> 첫 화면 맨 위의 「notelayer 켜기」 버튼을 쓰세요. 글을 여기로 옮겨 오지 않고, 읽던 페이지 그대로 그 위에 표시·설명을 얹습니다.</p>
-  </section>
-</dialog>
-
-<!-- AI 표시 만들기: 쓰는 LLM 과 복사·붙여 넣기로 주고받는다 -->
-<dialog id="aiDialog" class="dlg">
-  <form method="dialog" class="dlg-head"><strong>AI 표시 만들기</strong><button class="dlg-x" aria-label="닫기">×</button></form>
-  <p class="help" id="aiTarget"></p>
-  <ol class="steps">
-    <li><b>요청문 복사</b> — 지금 문서와 템플릿에 맞춘 요청문을 복사해 ChatGPT·Claude·Gemini 등에 붙여 넣으세요.
-      <div class="row"><button class="act primary" id="aiCopy">요청문 복사</button><span class="dlg-msg" id="aiCopyMsg"></span></div>
-      <details><summary>요청문 보기</summary><textarea id="aiPrompt" rows="8" readonly></textarea></details>
-    </li>
-    <li><b>답 붙여 넣기</b> — LLM 이 돌려준 답을 그대로 붙여 넣고 적용하세요.
-      <textarea id="aiAnswer" rows="8" placeholder='{"marks": [...], "boxes": [...]}'></textarea>
-      <div class="row"><button class="act primary" id="aiApply">적용</button><span class="dlg-msg" id="aiMsg"></span></div>
-    </li>
-  </ol>
-  <p class="help">AI 가 단 표시와 설명만 바뀌고, 내가 단 표시와 메모는 그대로 남습니다. 원문과 글자가 다른 인용은 붙이지 않고 알려 줍니다.</p>
-</dialog>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="templates.js"></script>
-<script src="documents/manifest.js"></script>
-<script src="prompt.js"></script>
-<script src="app.js"></script>
-<script src="vendor.js"></script>
-<script src="import.js"></script>
+<script src="home.js"></script>
 </body>
 </html>

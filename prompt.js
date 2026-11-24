@@ -1,4 +1,4 @@
-// notelayer — LLM 요청문 만들기와 답 읽기. notelayer 화면(import.js)과 웹페이지 위 표시 층(overlay.js)이 함께 쓴다.
+// notelayer — LLM 요청문 만들기와 답 읽기. 웹페이지 위 표시 층(overlay.js)과 PDF 노트가 함께 쓴다.
 // 화면 상태에 기대지 않는 순수 함수만 둔다.
 (() => {
   const EXTRA = {
