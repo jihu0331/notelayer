@@ -22,7 +22,7 @@
   // 설명 위치를 화면이 정했으면 바꾸는 단추를 숨긴다. 웹페이지는 사이트에 따라 카드를 끼우면 모양이 깨질 수 있어 「옆 패널」 로 바꿀 길을 남긴다
   const INLINE_ONLY = HOST?.inline === false ? "side" : HOST?.compact ? "inline" : null;
 
-  // 표시 색. app.css 의 템플릿 변수와 같은 값이다(그쪽을 고치면 여기도 고친다)
+  // 표시 색. 템플릿마다 다르고, PDF 노트·예시 화면도 이 값을 쓴다
   const MARK_COLORS = {
     exam: { circle: "#d9480f", hl: "rgba(255, 214, 10, .55)", wave: "#1c64f2" },
     tech: { circle: "#0f766e", hl: "rgba(56, 189, 248, .28)", wave: "#7c3aed" },
@@ -597,6 +597,8 @@
     .mini .open { color: #6b7280; }
     .mini-items { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 3px; color: #374151; }
     .mini-items span { white-space: nowrap; }
+    /* 표시가 없을 때 뜨는 안내 문장은 줄을 바꾼다. 한 줄로 두면 작은 창 오른쪽으로 넘친다 */
+    .mini-items .mini-note { white-space: normal; }
     .mini .it { display: inline-flex; align-items: center; border-radius: 6px; }
     .mini .it button { border: 0; background: none; font: inherit; color: inherit; cursor: pointer; padding: 1px 3px; border-radius: 5px; }
     .mini .it button:hover { background: #f3f4f6; }
@@ -1216,7 +1218,7 @@
           ...(state.imps.length ? [eyeOnly("imp", "중요도", state.imps.length)] : []),
           ...(state.trs.size ? [eyeOnly("tr", "번역", state.trs.size)] : []),
           ...(state.orphans.length ? [h("span", {}, `제자리를 잃은 표시 `, h("b", {}, String(state.orphans.length)))] : [])]
-        : [h("span", {}, !COMPACT ? "눌러서 요청문을 복사하고 AI 답을 붙여 넣으세요"
+        : [h("span", { class: "mini-note" }, !COMPACT ? "눌러서 요청문을 복사하고 AI 답을 붙여 넣으세요"
           : !LOCAL && !storeLive ? "저장해 둔 표시는 「저장 창」을 열면 불러옵니다. 새로 만들려면 「AI 답 넣기」에서 요청문을 복사하세요"
           : "이 페이지에 저장된 표시가 아직 없습니다. 「AI 답 넣기」에서 요청문을 복사해 AI 답을 붙여 넣으세요")]),
       COMPACT ? h("div", { class: "mini-acts" },
