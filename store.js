@@ -20,10 +20,10 @@
   const FOLDER_TAB = new URLSearchParams(location.search).has("folder") || IMPORT_TAB;
   const IN_POPUP = !!window.opener && !FOLDER_TAB;
   const bc = "BroadcastChannel" in window ? new BroadcastChannel("notelayer-store") : null;
-  let folderState = "none"; // none | granted | prompt
+  let folderState = "none", folderName = ""; // none | granted | prompt | stuck(확인이 끝나지 않음)
   async function folder(ask = false) {
     const r = await S.folder(ask);
-    folderState = r.state;
+    folderState = r.state; folderName = r.name || "";
     return r.dir;
   }
 
@@ -85,10 +85,14 @@
   // 누르는 도중에 버튼이 새것으로 바뀌면 클릭이 사라졌다(창이 막 열려 연결 인사가 여러 번 오는 동안)
   const drawn = {};
   const changed = (part, sig) => (drawn[part] === sig ? false : ((drawn[part] = sig), true));
+  // 처음 화면 그리기가 끝나지 않으면(브라우저 저장소가 답하지 않으면) 「연결을 기다리는 중」에 말없이 멈춰 있지 않고 알린다
+  let drawnOnce = false;
+  setTimeout(() => { if (!drawnOnce) status("이 브라우저의 notelayer 저장소가 답하지 않습니다. 크롬 창을 모두 닫았다가 다시 연 다음 즐겨찾기를 다시 눌러 주세요.", true); }, 6000);
   async function render() {
     const pages = (await allPages().catch(() => [])).sort((a, b) => b.savedAt - a.savedAt);
     await folder().catch(() => null);
-    const dirName = folderState === "none" ? "" : (await getMeta("dir").catch(() => null))?.name || "";
+    const dirName = folderState === "none" ? "" : folderName;
+    drawnOnce = true;
     // 지금 페이지
     const cur = current && pages.find((p) => p.key === current.key);
     const opener = window.opener;
@@ -116,8 +120,10 @@
     } else {
       const label = dirName ? `「${dirName}」` : "고른";
       $("folderBody").replaceChildren(el("span", { class: folderState === "granted" ? "ok" : "err" },
-        folderState === "granted" ? `${label} 폴더에도 저장하고 있습니다.` : `${label} 폴더를 쓰려면 다시 허용해야 합니다(브라우저를 새로 열면 다시 묻습니다).`));
-      if (folderState !== "granted") btns.push(folderAction("폴더 다시 허용", true, async () => { await folder(true); await syncFolder(); folderChanged(); render(); }));
+        folderState === "granted" ? `${label} 폴더에도 저장하고 있습니다.`
+          : folderState === "stuck" ? `${label} 폴더의 권한 확인이 끝나지 않아 지금은 폴더 없이 이 브라우저에만 저장합니다. 계속 이러면 「연결 끊기」를 누른 다음 폴더를 다시 고르세요.`
+          : `${label} 폴더를 쓰려면 다시 허용해야 합니다(브라우저를 새로 열면 다시 묻습니다).`));
+      if (folderState === "prompt") btns.push(folderAction("폴더 다시 허용", true, async () => { await folder(true); await syncFolder(); folderChanged(); render(); }));
       btns.push(folderAction("다른 폴더로 바꾸기", false, pickFolder));
       btns.push(el("button", { onclick: async () => { await delMeta("dir"); folderChanged(); render(); } }, "연결 끊기"));
     }

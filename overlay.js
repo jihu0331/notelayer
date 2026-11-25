@@ -1205,6 +1205,7 @@
     : h("div", { class: "mini", hidden: true, role: "button", tabindex: "0", title: "눌러서 notelayer 패널 펼치기",
       onclick: () => setMin(false), onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setMin(false); } } });
   let storeLive = false; // 작은 상자의 저장 점(저장 창과 연결됐는지)
+  let storeProblem = ""; // 저장 창과 연결하지 못한 사유. 작은 상자의 안내 문장 자리에 보인다
   // 작은 상자 옮기기: 윗줄(이름 줄)을 잡고 끈다. 옮긴 자리는 화면 왼쪽 위 기준으로 이 사이트에 기억하고,
   // 창 크기가 바뀌어도 화면 밖으로 나가지 않게 붙잡는다
   let miniDragged = false;
@@ -1269,6 +1270,7 @@
           ...(state.trs.size ? [eyeOnly("tr", "번역", state.trs.size)] : []),
           ...(state.orphans.length ? [h("span", {}, `제자리를 잃은 표시 `, h("b", {}, String(state.orphans.length)))] : [])]
         : [h("span", { class: "mini-note" }, !COMPACT ? "눌러서 요청문을 복사하고 AI 답을 붙여 넣으세요"
+          : !LOCAL && !storeLive && storeProblem ? storeProblem
           : !LOCAL && !storeLive ? "저장해 둔 표시는 「저장 창」을 열면 불러옵니다. 새로 만들려면 「AI 답 넣기」에서 요청문을 복사하세요"
           : "이 페이지에 저장된 표시가 아직 없습니다. 「AI 답 넣기」에서 요청문을 복사해 AI 답을 붙여 넣으세요")]),
       COMPACT ? h("div", { class: "mini-acts" },
@@ -2686,7 +2688,12 @@
     if (!conn.win) return;
     let n = 0;
     conn.helloT = setInterval(() => {
-      if (conn.ready || !conn.win || conn.win.closed || ++n > 80) { clearInterval(conn.helloT); renderStore(); return; }
+      if (conn.ready || !conn.win || conn.win.closed || ++n > 80) {
+        clearInterval(conn.helloT);
+        // 저장 창이 끝내 답하지 않으면 말없이 회색 점으로 두지 않고 알린다
+        if (!conn.ready && conn.win && !conn.win.closed && n > 80) setSaved(storeProblem = "저장 창이 답하지 않습니다. 저장 창을 닫고 즐겨찾기를 다시 눌러 주세요. 계속되면 크롬 창을 모두 닫았다가 다시 열어 주세요.", true);
+        renderStore(); return;
+      }
       try { conn.win.postMessage(msgFor("hello", 0), NL_ORIGIN); } catch {}
     }, 250);
   }
@@ -2713,12 +2720,14 @@
     if (d.type === "updated") { reloadSaved(); return; } // 저장 창에서 이 페이지의 기록 파일을 불러왔다
     if (d.type === "ready") {
       if (conn.ready) return;
-      conn.ready = true; conn.folder = !!d.folder;
+      conn.ready = true; conn.folder = !!d.folder; storeProblem = "";
       clearInterval(conn.helloT);
       renderStore();
       onStoreReady();
       return;
     }
+    // 인사(id 0)를 저장 창이 거절했으면 그 사유를 보인다(전에는 버려져서 회색 점만 남았다)
+    if (d.type === "error" && d.id === 0 && !conn.ready) { setSaved(storeProblem = `저장 창이 연결을 받지 않았습니다: ${d.message}`, true); renderStore(); return; }
     const p = conn.pending.get(d.id);
     if (!p) return;
     conn.pending.delete(d.id); clearTimeout(p.t);
