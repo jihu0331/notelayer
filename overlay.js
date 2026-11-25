@@ -249,6 +249,7 @@
     concepts: null,
     imps: [],             // 중요도 음영 { i, j, level, why, mine } — 문단 i..j(0부터) 묶음. level = core | some | rare
     quiz: [],             // 다 읽은 뒤 떠올려 보는 문제 { q, a, i, quote } — i = 답의 근거 문단(0부터), quote = 그 문단의 근거 구절
+    quizNotes: new Map(), // 퀴즈에 내가 적은 답: 문제 글 → { text, ok, at } — ok = 떠올렸다(true)·못 떠올렸다(false), at = 마지막으로 적거나 고른 때
     show: { circle: true, highlight: true, wave: true, boxes: true, tr: true, imp: true },
     focus: null, // 「이것만 또렷하게」: circle | highlight | wave | boxes — 본문의 나머지 글자를 흐리게 하고 이 종류만 남긴다
     editing: false,
@@ -362,10 +363,11 @@
       ...(state.trs.size ? { translations: [...state.trs].sort((a, b) => a[0] - b[0])
         .map(([i, t]) => ({ p: i + 1, text: t.text, ...(t.mine ? { mine: true } : {}) })) } : {}),
       ...(state.quiz.length ? { quiz: state.quiz.map((x) => ({ p: x.i + 1, q: x.q, a: x.a, ...(x.quote ? { quote: x.quote } : {}) })) } : {}),
+      ...(state.quizNotes.size ? { quizNotes: [...state.quizNotes].map(([q, n]) => ({ q, ...n })) } : {}),
       ...(HOST?.extraData?.() || {}), // 품는 화면의 층(PDF 노트의 손글씨 ink)
     };
   }
-  const hasData = () => !!(state.marks.length || state.orphans.length || state.boxes.length || state.concepts || state.imps.length || state.trs.size || state.quiz.length || HOST?.hasExtra?.());
+  const hasData = () => !!(state.marks.length || state.orphans.length || state.boxes.length || state.concepts || state.imps.length || state.trs.size || state.quiz.length || state.quizNotes.size || HOST?.hasExtra?.());
   let saveTimer = 0;
   // 고칠 때마다 저장 창에 보낸다. 저장 창이 닫혀 있으면 「저장하지 않은 변경」으로 남겨 두었다가 다시 연결되면 보낸다
   function save() {
@@ -713,6 +715,18 @@
     .qz-miss { margin: 10px 0; padding-left: 20px; color: #374151; }
     .qz-miss li { margin: 4px 0; }
     .qz-tip { color: #6b7280; font-size: 13px; margin-top: 12px; }
+    .qz-mine[readonly] { background: #f9fafb; }
+    .qz-prev { margin-top: 12px; padding: 10px 14px; border: 1px dashed #d0d7de; border-radius: 10px; white-space: pre-wrap; color: #374151; }
+    .qz-note-at { color: #6b7280; font-size: 12px; }
+    .qz-notes { margin: 12px 0 4px; }
+    .qz-notes summary { cursor: pointer; color: #374151; font-size: 14px; }
+    .qz-note { margin-top: 10px; padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 10px; }
+    .qz-note-q { font-weight: 600; font-size: 14px; }
+    .qz-note-t { margin: 4px 0; white-space: pre-wrap; }
+    :host([data-theme="dark"]) .qz-mine[readonly] { background: #1b1e24; }
+    :host([data-theme="dark"]) .qz-prev { border-color: #3d434d; color: #d1d5db; }
+    :host([data-theme="dark"]) .qz-note { border-color: #2b2f36; }
+    :host([data-theme="dark"]) .qz-notes summary { color: #d1d5db; }
     :host([data-theme="dark"]) .qz-card { background: #1b1e24; border-color: #2b2f36; box-shadow: none; }
     :host([data-theme="dark"]) .qz-mine { background: #14161a; border-color: #3d434d; }
     :host([data-theme="dark"]) .qz-a { background: #0f2a1c; border-color: #166534; }
@@ -1111,7 +1125,7 @@
     state.root = el;
     state.paras = collectParagraphs(el);
     if (had) {
-      state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.imps = []; state.quiz = []; state.trs = new Map();
+      state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.imps = []; state.quiz = []; state.quizNotes = new Map(); state.trs = new Map();
       apply(data, { restored: true });
       save();
     } else { inlineSig = ""; paint(); drawLayer(); renderResult(); }
@@ -1439,7 +1453,7 @@
   }
   function clearSaved() {
     if (!confirm("이 페이지의 표시·설명을 모두 지울까요? 저장한 것도 지워집니다.")) return;
-    state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.imps = []; state.quiz = []; state.concepts = null; state.trs = new Map();
+    state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.imps = []; state.quiz = []; state.quizNotes = new Map(); state.concepts = null; state.trs = new Map();
     paint(); drawLayer(); renderResult(); save();
     setMsg(applyMsg, "모두 지웠습니다.");
   }
@@ -1478,6 +1492,10 @@
     if ((c || restored) && !keepMine) state.concepts = c;
     // 퀴즈: 새 답에 문제가 있으면 바꾸고, 없으면 지금 문제를 그대로 둔다. 문제가 바뀌면 풀던 차례도 처음부터
     if (restored || a.quiz.length) { state.quiz = a.quiz; quizRun = null; }
+    // 퀴즈에 내가 적은 답: 저장본을 열 때만 되살린다. 새 AI 답을 붙여도 지우지 않는다(내가 쓴 글이라)
+    if (restored) state.quizNotes = new Map((Array.isArray(result.quizNotes) ? result.quizNotes : [])
+      .filter((x) => x && typeof x.q === "string" && x.q)
+      .map((x) => [x.q, { ...(typeof x.text === "string" && x.text ? { text: x.text } : {}), ...(typeof x.ok === "boolean" ? { ok: x.ok } : {}), at: typeof x.at === "string" ? x.at : "" }]));
     if (restored || result.ink) HOST?.restoreExtra?.(result); // 품는 화면의 층도 되살린다
     paint(); drawLayer(); renderResult();
     if (!restored || a.moved) save(); // 자리를 다시 잡은 표시는 새 구절·앞뒤 글자로 저장해 둔다
@@ -1764,17 +1782,42 @@
     const card = h("div", { class: "qz-card" });
     const prog = h("span", { class: "muted" });
     const btn = (cls, label, onclick, title) => h("button", { class: `qz-btn${cls ? ` ${cls}` : ""}`, onclick, ...(title ? { title } : {}) }, label);
-    const restart = (order) => { Object.assign(run, { order, at: 0, shown: false, mine: "" }); run.got = new Map(); render(); };
-    const grade = (ok) => { run.got.set(run.order[run.at], ok); Object.assign(run, { at: run.at + 1, shown: false, mine: "" }); render(); };
+    // 카드 내용을 바꾼다. 기본 replaceChildren 은 빈 값(null)을 「null」 글자로 넣어서 먼저 걸러 낸다
+    const fill = (...kids) => card.replaceChildren(...kids.filter(Boolean));
+    // 적은 답은 문제 글을 열쇠로 이 페이지 기록에 남긴다. 지난번 답은 「답 보기」 다음에만 보여 준다
+    // (문제와 함께 미리 보이면 떠올리기가 아니라 다시 읽기가 된다)
+    const note = (q) => state.quizNotes.get(q);
+    const keep = (q, patch) => { state.quizNotes.set(q, { ...(note(q) || {}), ...patch, at: new Date().toISOString() }); save(); };
+    const restart = (order) => { Object.assign(run, { order, at: 0, shown: false, mine: "", prev: null }); run.got = new Map(); render(); };
+    const reveal = () => {
+      const q = all[run.order[run.at]].q;
+      run.prev = note(q) || null; // 이번에 적은 글로 덮기 전의 지난번 답
+      if (run.mine.trim()) keep(q, { text: run.mine.trim() });
+      run.shown = true;
+      render();
+    };
+    const grade = (ok) => {
+      keep(all[run.order[run.at]].q, { ok });
+      run.got.set(run.order[run.at], ok);
+      Object.assign(run, { at: run.at + 1, shown: false, mine: "", prev: null });
+      render();
+    };
+    const okWord = (n) => (n?.ok === true ? " · 떠올렸음" : n?.ok === false ? " · 못 떠올렸음" : "");
     function render() {
       renderMini(); // 작은 창의 「퀴즈 3/8」 차례 표시를 맞춘다
       prog.textContent = state.quiz.length ? `문제 ${all.length}개` : `요약 개념으로 만든 문제 ${all.length}개`;
       if (run.at >= run.order.length) {
         const missed = run.order.filter((k) => run.got.get(k) === false);
         const ok = run.order.length - missed.length;
-        card.replaceChildren(
+        const written = all.filter((x) => note(x.q)?.text);
+        fill(
           h("div", { class: "qz-sum" }, `${run.order.length}문제 가운데 ${ok}문제를 떠올렸습니다`),
           missed.length ? h("ul", { class: "qz-miss" }, missed.map((k) => h("li", {}, all[k].q))) : null,
+          written.length ? h("details", { class: "qz-notes" }, h("summary", {}, `내가 적은 답 ${written.length}개 보기`),
+            ...written.map((x) => h("div", { class: "qz-note" },
+              h("div", { class: "qz-note-q" }, x.q),
+              h("div", { class: "qz-note-t" }, note(x.q).text),
+              h("div", { class: "qz-note-at" }, `${fmtTime(note(x.q).at)}${okWord(note(x.q))}`)))) : null,
           h("div", { class: "qz-acts" },
             missed.length ? btn("primary", `못 떠올린 ${missed.length}문제만 다시`, () => restart(missed)) : null,
             btn("", "처음부터 다시", () => restart(all.map((_, k) => k))),
@@ -1783,21 +1826,29 @@
         return;
       }
       const item = all[run.order[run.at]];
-      const mine = h("textarea", { class: "qz-mine", placeholder: "답을 먼저 떠올려 적어 보세요. 적은 글은 저장하지 않습니다. 머릿속으로만 떠올려도 됩니다.",
+      const saved = note(item.q);
+      const mine = h("textarea", { class: "qz-mine",
+        placeholder: HOST?.ephemeral ? "답을 먼저 떠올려 적어 보세요. 예시 화면이라 적은 글은 저장하지 않습니다."
+          : "답을 먼저 떠올려 적어 보세요. 「답 보기」를 누르면 적은 글이 이 페이지 기록에 함께 저장됩니다. 머릿속으로만 떠올려도 됩니다.",
         oninput: (e) => { run.mine = e.target.value; } });
       mine.value = run.mine;
-      card.replaceChildren(
+      mine.readOnly = run.shown; // 답을 본 다음 고친 글은 떠올린 답이 아니라서 받지 않는다
+      const prev = run.prev;
+      fill(
         h("div", { class: "qz-num" }, `${run.at + 1} / ${run.order.length}`),
         h("div", { class: "qz-q" }, item.q),
         mine,
         ...(run.shown
-          ? [h("div", { class: "qz-a" }, item.a),
+          ? [prev?.text && prev.text !== run.mine.trim()
+              ? h("div", { class: "qz-prev" }, h("div", { class: "qz-note-at" }, `지난번에 적은 답 · ${fmtTime(prev.at)}${okWord(prev)}`), prev.text) : null,
+            h("div", { class: "qz-a" }, item.a),
             h("div", { class: "qz-acts" },
               btn("ok", "떠올렸다", () => grade(true)),
               btn("no", "못 떠올렸다", () => grade(false)),
               h("span", { class: "grow" }),
               item.def ? btn("", "원문에서 보기 ↗", () => { closeSummary(); showQuote(item.def); }, "근거 구절로 갑니다. 작은 창의 「퀴즈」를 누르면 이 문제부터 이어서 풉니다") : null)]
-          : [h("div", { class: "qz-acts" }, btn("primary", "답 보기", () => { run.shown = true; render(); }))]));
+          : [h("div", { class: "qz-acts" }, btn("primary", "답 보기", reveal),
+              saved ? h("span", { class: "qz-note-at" }, `지난번 기록이 있습니다${okWord(saved)} · 답을 보면 함께 보입니다`) : null)]));
       if (!run.shown) setTimeout(() => mine.focus(), 0);
     }
     sheet = h("div", { class: "sheet", role: "dialog", "aria-label": "퀴즈" },
@@ -2703,7 +2754,7 @@
       const r = await send("load");
       if (r.record?.data && (replace || !hasData())) {
         const data = r.record.data;
-        if (replace) { state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.imps = []; state.quiz = []; state.concepts = null; state.trs = new Map(); }
+        if (replace) { state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.imps = []; state.quiz = []; state.quizNotes = new Map(); state.concepts = null; state.trs = new Map(); }
         if (TEMPLATES[data.tpl]) { state.tpl = data.tpl; tplSelect.value = data.tpl; }
         const res = apply(data, { restored: true });
         setSaved(`${replace ? "저장 창에서 불러온 파일로 다시 칠했습니다" : "저장해 둔 표시를 불러왔습니다"} · ${fmtTime(r.record.savedAt)}${r.from === "folder" ? " · 폴더의 파일에서" : ""}`
@@ -2835,7 +2886,7 @@
         record: { v: 1, tpl: state.tpl, ...serialize() }, paragraphs: state.paras.map((x) => x.text),
       };
     },
-    restore: (data) => { state.marks = []; state.orphans = []; state.boxes = []; state.imps = []; state.quiz = []; state.concepts = null; state.trs = new Map(); return apply(data, { restored: true }); },
+    restore: (data) => { state.marks = []; state.orphans = []; state.boxes = []; state.imps = []; state.quiz = []; state.quizNotes = new Map(); state.concepts = null; state.trs = new Map(); return apply(data, { restored: true }); },
     destroy,
   };
 })();
