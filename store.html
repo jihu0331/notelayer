@@ -66,7 +66,7 @@
     </div>
   </section>
 </main>
-<script src="storage.js"></script>
-<script src="store.js"></script>
+<!-- 공개 주소는 파일을 10분 동안 캐시해도 된다고 알려 준다. 고친 판이 배포 즉시 쓰이도록 매번 새로 받는다 -->
+<script>for (const f of ["storage.js","store.js"]) document.write(`<script src="${f}?v=${Date.now()}"></` + `script>`);</script>
 </body>
 </html>

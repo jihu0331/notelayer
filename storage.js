@@ -42,10 +42,11 @@
     const dir = await late(getMeta("dir"), 3000).catch(() => null);
     if (!dir) return { dir: null, state: "none", name: "" };
     let p;
+    // handle: 쓸 수 없는 상태에서도 저장해 둔 폴더를 돌려준다(「폴더 다시 허용」이 누르자마자 바로 권한을 물을 수 있게)
     try { p = await late(dir.queryPermission({ mode: "readwrite" }), 2000); }
-    catch { return { dir: null, state: "stuck", name: dir.name || "" }; }
+    catch { return { dir: null, handle: dir, state: "stuck", name: dir.name || "" }; }
     if (p !== "granted" && ask) p = await dir.requestPermission({ mode: "readwrite" });
-    return p === "granted" ? { dir, state: "granted", name: dir.name || "" } : { dir: null, state: "prompt", name: dir.name || "" };
+    return p === "granted" ? { dir, handle: dir, state: "granted", name: dir.name || "" } : { dir: null, handle: dir, state: "prompt", name: dir.name || "" };
   }
   function hash(s) { let h = 2166136261; for (const c of s) { h ^= c.codePointAt(0); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); }
   // notelayer 자기 주소의 PDF 노트(pdf.html?doc=…)인지. 맞으면 문서 id 를 돌려준다.

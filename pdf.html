@@ -125,10 +125,7 @@
   <div class="pages" id="pages"></div>
 </main>
 
-<script src="templates.js"></script>
-<script src="prompt.js"></script>
-<script src="storage.js"></script>
-<script src="vendor.js"></script>
-<script src="pdfnote.js"></script>
+<!-- 공개 주소는 파일을 10분 동안 캐시해도 된다고 알려 준다. 고친 판이 배포 즉시 쓰이도록 매번 새로 받는다 -->
+<script>for (const f of ["templates.js","prompt.js","storage.js","vendor.js","pdfnote.js"]) document.write(`<script src="${f}?v=${Date.now()}"></` + `script>`);</script>
 </body>
 </html>
