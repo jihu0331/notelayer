@@ -31,17 +31,17 @@
   let current = null; // { key, url, title, origin }
   const sameOrigin = (key, origin) => { try { return new URL(key).origin === origin; } catch { return false; } };
 
-  // 로컬 시험 서버(localhost)에서만: 시험용 즐겨찾기가 표시 층 코드를 달라고 하면 이 창이 자기 서버에서 읽어 넘겨준다.
-  // 블로그 페이지가 localhost 에서 직접 파일을 받으면 크롬이 사이트마다 「로컬 네트워크 액세스」 허락을 요구하지만,
-  // 따로 연 창끼리 주고받는 것은 허락이 필요 없다. 넘겨주는 것은 공개된 앱 코드뿐이다
-  const DEV = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
-  const devCode = async () => (await Promise.all(["templates.js", "prompt.js", "overlay.js"]
+  // 즐겨찾기가 표시 층 코드를 달라고 하면 이 창이 자기 주소에서 읽어 넘겨준다. 넘겨주는 것은 공개된 앱 코드뿐이다.
+  // - 시험용: 블로그 페이지가 localhost 에서 직접 파일을 받으면 크롬이 사이트마다 「로컬 네트워크 액세스」 허락을 요구한다.
+  //   따로 연 창끼리 주고받는 것은 허락이 필요 없다
+  // - 공개용: 사이트 보안 설정(CSP)이 다른 주소의 스크립트 파일을 막으면(예: Microsoft Learn·위키백과) 즐겨찾기가 이 길로 되살린다
+  const appCode = async () => (await Promise.all(["templates.js", "prompt.js", "overlay.js"]
     .map((f) => fetch(`${f}?v=${Date.now()}`, { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(f); return r.text(); })))).join("\n;\n");
 
   window.addEventListener("message", async (e) => {
     const d = e.data;
-    if (d?.nl === "dev-code-req") {
-      if (DEV && window.opener && e.source === window.opener) devCode().then((code) => e.source.postMessage({ nl: "dev-code", code }, e.origin)).catch(() => {});
+    if (d?.nl === "dev-code-req") { // 이름은 시험용 때 붙인 그대로 둔다(이미 끌어다 둔 시험용 즐겨찾기가 이 이름으로 묻는다)
+      if (window.opener && e.source === window.opener) appCode().then((code) => e.source.postMessage({ nl: "dev-code", code }, e.origin)).catch(() => {});
       return;
     }
     if (!d || d.nl !== "page" || !window.opener || e.source !== window.opener) return;
