@@ -7,7 +7,7 @@
 //   3) 저장은 저장 창을 띄우지 않고 같은 주소의 저장 코드(storage.js)를 바로 부른다. 기록은 저장 창 목록에도 함께 보인다
 (() => {
   const S = window.NL_STORAGE;
-  // 문서 넣기 화면(import.js)과 같은 판의 pdf.js 를 쓴다
+  // vendor.js 가 해시로 확인하는 판의 pdf.js 를 쓴다
   // 이 판(3.11)은 조작된 글꼴이 든 PDF 를 열면 그 안의 코드가 실행되는 취약점(CVE-2024-4367)이 있다. 모든 getDocument 에
   // isEvalSupported: false 를 넣어 막는다(공식 권고). 코드가 실행되면 이 주소에 저장한 다른 메모까지 읽힐 수 있다
   const $ = (id) => document.getElementById(id);

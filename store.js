@@ -20,10 +20,10 @@
   const FOLDER_TAB = new URLSearchParams(location.search).has("folder") || IMPORT_TAB;
   const IN_POPUP = !!window.opener && !FOLDER_TAB;
   const bc = "BroadcastChannel" in window ? new BroadcastChannel("notelayer-store") : null;
-  let folderState = "none"; // none | granted | prompt
+  let folderState = "none", folderName = ""; // none | granted | prompt | stuck(확인이 끝나지 않음)
   async function folder(ask = false) {
     const r = await S.folder(ask);
-    folderState = r.state;
+    folderState = r.state; folderName = r.name || "";
     return r.dir;
   }
 
@@ -31,17 +31,17 @@
   let current = null; // { key, url, title, origin }
   const sameOrigin = (key, origin) => { try { return new URL(key).origin === origin; } catch { return false; } };
 
-  // 로컬 시험 서버(localhost)에서만: 시험용 즐겨찾기가 표시 층 코드를 달라고 하면 이 창이 자기 서버에서 읽어 넘겨준다.
-  // 블로그 페이지가 localhost 에서 직접 파일을 받으면 크롬이 사이트마다 「로컬 네트워크 액세스」 허락을 요구하지만,
-  // 따로 연 창끼리 주고받는 것은 허락이 필요 없다. 넘겨주는 것은 공개된 앱 코드뿐이다
-  const DEV = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
-  const devCode = async () => (await Promise.all(["templates.js", "prompt.js", "overlay.js"]
+  // 즐겨찾기가 표시 층 코드를 달라고 하면 이 창이 자기 주소에서 읽어 넘겨준다. 넘겨주는 것은 공개된 앱 코드뿐이다.
+  // - 시험용: 블로그 페이지가 localhost 에서 직접 파일을 받으면 크롬이 사이트마다 「로컬 네트워크 액세스」 허락을 요구한다.
+  //   따로 연 창끼리 주고받는 것은 허락이 필요 없다
+  // - 공개용: 사이트 보안 설정(CSP)이 다른 주소의 스크립트 파일을 막으면(예: Microsoft Learn·위키백과) 즐겨찾기가 이 길로 되살린다
+  const appCode = async () => (await Promise.all(["templates.js", "prompt.js", "overlay.js"]
     .map((f) => fetch(`${f}?v=${Date.now()}`, { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(f); return r.text(); })))).join("\n;\n");
 
   window.addEventListener("message", async (e) => {
     const d = e.data;
-    if (d?.nl === "dev-code-req") {
-      if (DEV && window.opener && e.source === window.opener) devCode().then((code) => e.source.postMessage({ nl: "dev-code", code }, e.origin)).catch(() => {});
+    if (d?.nl === "dev-code-req") { // 이름은 시험용 때 붙인 그대로 둔다(이미 끌어다 둔 시험용 즐겨찾기가 이 이름으로 묻는다)
+      if (window.opener && e.source === window.opener) appCode().then((code) => e.source.postMessage({ nl: "dev-code", code }, e.origin)).catch(() => {});
       return;
     }
     if (!d || d.nl !== "page" || !window.opener || e.source !== window.opener) return;
@@ -85,10 +85,14 @@
   // 누르는 도중에 버튼이 새것으로 바뀌면 클릭이 사라졌다(창이 막 열려 연결 인사가 여러 번 오는 동안)
   const drawn = {};
   const changed = (part, sig) => (drawn[part] === sig ? false : ((drawn[part] = sig), true));
+  // 처음 화면 그리기가 끝나지 않으면(브라우저 저장소가 답하지 않으면) 「연결을 기다리는 중」에 말없이 멈춰 있지 않고 알린다
+  let drawnOnce = false;
+  setTimeout(() => { if (!drawnOnce) status("이 브라우저의 notelayer 저장소가 답하지 않습니다. 크롬 창을 모두 닫았다가 다시 연 다음 즐겨찾기를 다시 눌러 주세요.", true); }, 6000);
   async function render() {
     const pages = (await allPages().catch(() => [])).sort((a, b) => b.savedAt - a.savedAt);
     await folder().catch(() => null);
-    const dirName = folderState === "none" ? "" : (await getMeta("dir").catch(() => null))?.name || "";
+    const dirName = folderState === "none" ? "" : folderName;
+    drawnOnce = true;
     // 지금 페이지
     const cur = current && pages.find((p) => p.key === current.key);
     const opener = window.opener;
@@ -116,8 +120,10 @@
     } else {
       const label = dirName ? `「${dirName}」` : "고른";
       $("folderBody").replaceChildren(el("span", { class: folderState === "granted" ? "ok" : "err" },
-        folderState === "granted" ? `${label} 폴더에도 저장하고 있습니다.` : `${label} 폴더를 쓰려면 다시 허용해야 합니다(브라우저를 새로 열면 다시 묻습니다).`));
-      if (folderState !== "granted") btns.push(folderAction("폴더 다시 허용", true, async () => { await folder(true); await syncFolder(); folderChanged(); render(); }));
+        folderState === "granted" ? `${label} 폴더에도 저장하고 있습니다.`
+          : folderState === "stuck" ? `${label} 폴더의 권한 확인이 끝나지 않아 지금은 폴더 없이 이 브라우저에만 저장합니다. 계속 이러면 「연결 끊기」를 누른 다음 폴더를 다시 고르세요.`
+          : `${label} 폴더를 쓰려면 다시 허용해야 합니다(브라우저를 새로 열면 다시 묻습니다).`));
+      if (folderState === "prompt") btns.push(folderAction("폴더 다시 허용", true, async () => { await folder(true); await syncFolder(); folderChanged(); render(); }));
       btns.push(folderAction("다른 폴더로 바꾸기", false, pickFolder));
       btns.push(el("button", { onclick: async () => { await delMeta("dir"); folderChanged(); render(); } }, "연결 끊기"));
     }

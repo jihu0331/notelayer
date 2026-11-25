@@ -33,12 +33,17 @@
   const delPdf = async (id) => req((await os(pdfDb, "files", "readwrite")).delete(id));
   const allPdfs = async () => req((await os(pdfDb, "files")).getAll());
 
-  // ── 내 PC 폴더 ── state: none(안 고름) | granted(쓸 수 있음) | prompt(다시 허용해야 함)
+  // ── 내 PC 폴더 ── state: none(안 고름) | granted(쓸 수 있음) | prompt(다시 허용해야 함) | stuck(확인이 끝나지 않음)
   const canFolder = "showDirectoryPicker" in window;
+  // 폴더 확인(저장해 둔 폴더 꺼내기·권한 묻기)이 끝나지 않는 일이 있었다. 저장 창은 연결 인사·저장·화면 그리기가
+  // 모두 이 확인을 기다리므로 창 전체가 「연결을 기다리는 중」에 멈췄다. 시간 제한을 넘기면 폴더 없이 진행한다
+  const late = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error("timeout")), ms))]);
   async function folder(ask = false) {
-    const dir = await getMeta("dir").catch(() => null);
+    const dir = await late(getMeta("dir"), 3000).catch(() => null);
     if (!dir) return { dir: null, state: "none", name: "" };
-    let p = await dir.queryPermission({ mode: "readwrite" });
+    let p;
+    try { p = await late(dir.queryPermission({ mode: "readwrite" }), 2000); }
+    catch { return { dir: null, state: "stuck", name: dir.name || "" }; }
     if (p !== "granted" && ask) p = await dir.requestPermission({ mode: "readwrite" });
     return p === "granted" ? { dir, state: "granted", name: dir.name || "" } : { dir: null, state: "prompt", name: dir.name || "" };
   }

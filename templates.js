@@ -1,4 +1,4 @@
-// 템플릿 정의. 디자인(색·글꼴)은 app.css 의 [data-template="..."] 변수가, 나머지는 이 데이터가 정한다.
+// 템플릿 정의. 표시 색은 overlay.js 의 색 표가, 나머지는 이 데이터가 정한다.
 // 모양의 뜻은 템플릿과 상관없이 같다: circle = 핵심어, highlight = 중요한 문장, wave = 확인이 필요한 곳.
 // levels = 중요도 음영 세 단계(core 진한 음영, some 옅은 음영, rare 흐리게)의 이름, levelRule = AI 에게 주는 등급 기준.
 window.NL_TEMPLATES = {

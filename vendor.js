@@ -1,4 +1,4 @@
-// notelayer 외부 도구 불러오기 — 문서 넣기 화면(import.js)과 PDF 노트(pdfnote.js)가 함께 쓴다.
+// notelayer 외부 도구 불러오기 — PDF 노트(pdfnote.js)가 쓴다.
 // 외부 주소(CDN)에서 받는 실행 코드는 모두 해시(SRI)로 확인한다. 받은 파일이 한 글자라도 다르면 실행하지 않는다.
 // 판을 올릴 때는 주소와 해시를 같이 바꾼다: curl -s <주소> | openssl dgst -sha384 -binary | openssl base64 -A
 (() => {

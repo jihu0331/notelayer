@@ -1,4 +1,4 @@
-// notelayer — LLM 요청문 만들기와 답 읽기. notelayer 화면(import.js)과 웹페이지 위 표시 층(overlay.js)이 함께 쓴다.
+// notelayer — LLM 요청문 만들기와 답 읽기. 웹페이지 위 표시 층(overlay.js)과 PDF 노트가 함께 쓴다.
 // 화면 상태에 기대지 않는 순수 함수만 둔다.
 (() => {
   const EXTRA = {
@@ -28,7 +28,7 @@
   // detail: 설명 분량(brief 간단히 · mid 중간 · deep 상세히). 표시·요약·중요도 규칙은 같고 설명(boxes) 규칙만 바뀐다
   function build({ title, paragraphs, templateId, template: t, needTr = false, detail = "mid" }) {
     const labels = Object.keys(t.boxes);
-    const shape = `{"marks":[{"p":1,"kind":"circle","quote":"원문 그대로"}],"boxes":[{"p":1,"label":"${labels[0]}","text":"설명","pre":"(선택) 글자 그림","answer":"(선택) 답"}],"concepts":{"topic":"문서 주제","nodes":[{"id":"a","term":"개념 이름","role":"문제/해결책/구성 요소 등","parent":null,"def":{"p":1,"quote":"정의 문장 안의 원문 글자 그대로 일부"},"match":["본문에 나오는 낱말 그대로"],"gloss":"쉬운 말로 쓴 한 줄 풀이","points":["이 개념의 핵심 1","핵심 2 (예시 포함)"]},{"id":"b","term":"하위 개념","role":"구성 요소","parent":"a","rel":"종류","def":{"p":2,"quote":"…"},"match":["…"],"gloss":"…"}],"links":[{"from":"b","to":"a","label":"해결"}]}${t.levels ? ',"importance":[{"p":1,"to":3,"level":"core","why":"이 등급인 이유 한 줄"}]' : ""}${needTr ? ',"translations":[{"p":1,"text":"한국어 번역"}]' : ""}}`;
+    const shape = `{"marks":[{"p":1,"kind":"circle","quote":"원문 그대로"}],"boxes":[{"p":1,"label":"${labels[0]}","text":"설명","pre":"(선택) 글자 그림","answer":"(선택) 답"}],"concepts":{"topic":"문서 주제","nodes":[{"id":"a","term":"개념 이름","role":"문제/해결책/구성 요소 등","parent":null,"def":{"p":1,"quote":"정의 문장 안의 원문 글자 그대로 일부"},"match":["본문에 나오는 낱말 그대로"],"gloss":"쉬운 말로 쓴 한 줄 풀이","points":["이 개념의 핵심 1","핵심 2 (예시 포함)"]},{"id":"b","term":"하위 개념","role":"구성 요소","parent":"a","rel":"종류","def":{"p":2,"quote":"…"},"match":["…"],"gloss":"…"}],"links":[{"from":"b","to":"a","label":"해결"}]},"quiz":[{"q":"떠올려 볼 질문","a":"답 1-3문장","p":1,"quote":"답의 근거가 되는 원문 글자 그대로 일부"}]${t.levels ? ',"importance":[{"p":1,"to":3,"level":"core","why":"이 등급인 이유 한 줄"}]' : ""}${needTr ? ',"translations":[{"p":1,"text":"한국어 번역"}]' : ""}}`;
     return [
       "너는 notelayer 의 표시와 설명을 만든다. notelayer 는 원문을 고치지 않고 그 위에 표시·설명 층을 얹어 보여 준다.",
       `아래 문서에 「${t.name}」 템플릿을 적용해서, 다른 말 없이 JSON 하나만 돌려줘.`,
@@ -51,6 +51,8 @@
         // 중요도와 설명량을 묶는다: 따로 두면 AI 가 rare 로 매긴 어려운 구간(이론·알고리즘)에 오히려 설명을 몰아 단다
         `6-1. 설명과 표시의 양은 importance 등급에 맞춘다. importance 를 먼저 정한 다음 설명을 단다. 이 규칙은 2번·3번보다 앞선다. core 묶음에는 3번 규칙대로 설명을 단다. some 묶음에는 설명을 문단마다 많아야 하나, 한두 문장으로 짧게 쓰고 pre 예시는 그것 없이는 이해가 안 될 때만 넣는다. rare 묶음에는 묶음 첫 문단에 설명 하나만 단다: 이 묶음이 무엇에 관한 것인지, 읽는 사람이 왜 건너뛰어도 되는지, 그래도 가져갈 결론이 있으면 그 한 가지를 문단 번호와 함께 쓴다. rare 묶음의 다른 설명은 원문 오류·번역 오류를 짚을 때만 달고, 단계별 예시·따라 해 보기·용어 풀이는 달지 않는다. rare 묶음의 표시는 묶음 전체에서 2-3개 이내로, 가져갈 결론 문장에 친다. 이렇게 아낀 분량은 core 묶음 설명에 쓴다.`] : []),
       ...(needTr ? ["7. 원문이 한국어가 아니므로 translations 에 문단마다 자연스러운 한국어 번역을 넣는다."] : []),
+      // 퀴즈: 다 읽은 뒤 떠올려 보는 문제. 떠올리기가 다시 읽기보다 오래 남아서 넣었다
+      `퀴즈. quiz 는 다 읽은 뒤 읽는 사람이 답을 먼저 떠올려 보는 문제다. 4-8개를 문서 앞부터 끝까지 고르게 내고${t.levels ? ", importance 가 core 인 묶음을 먼저 다룬다" : ""}. 용어 뜻을 그대로 되묻기보다 「왜 그렇게 되나」「무엇이 다른가」「이 예에 적용하면 어떻게 되나」를 묻는다. 질문에 답을 흘리지 않는다. a 는 1-3문장 답으로, 원문을 읽으면 맞는지 확인할 수 있는 내용만 쓴다. p 는 답의 근거 문단 번호, quote 는 그 문단 text 안에 글자 그대로 있는 근거 구절이다.`,
       "",
       `돌려줄 모양: ${shape}`,
       "",
