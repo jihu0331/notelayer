@@ -247,10 +247,11 @@
     boxes: [],            // { id, label, text, pre, answer, el, mine }
     trs: new Map(),       // 번역: 문단 번호(0부터) → { text, mine }
     concepts: null,
-    imps: [],             // 중요도 음영 { i, j, level, why, mine } — 문단 i..j(0부터) 묶음. level = core | some | rare
+    terms: [],            // 용어 풀이에 더 쓸 용어 { term, match, gloss, points, def } — 요약 구조도에 넣지 않은 용어를 AI 가 넉넉하게 고른 것
+    imps: [],            // 중요도 음영 { i, j, level, why, mine } — 문단 i..j(0부터) 묶음. level = core | some | rare
     quiz: [],             // 다 읽은 뒤 떠올려 보는 문제 { q, a, i, quote } — i = 답의 근거 문단(0부터), quote = 그 문단의 근거 구절
     quizNotes: new Map(), // 퀴즈에 내가 적은 답: 문제 글 → { text, ok, at } — ok = 떠올렸다(true)·못 떠올렸다(false), at = 마지막으로 적거나 고른 때
-    show: { circle: true, highlight: true, wave: true, boxes: true, tr: true, imp: true },
+    show: { circle: true, highlight: true, wave: true, boxes: true, tr: true, imp: true, terms: true },
     focus: null, // 「이것만 또렷하게」: circle | highlight | wave | boxes — 본문의 나머지 글자를 흐리게 하고 이 종류만 남긴다
     editing: false,
     side: ui.side || null, width: ui.width || null,
@@ -349,6 +350,63 @@
       .filter((l) => ids.has(l.from) && ids.has(l.to) && l.from !== l.to && l.label);
     return nodes.length ? { topic: tidy(c.topic) || document.title, nodes, links, ...(c.mine ? { mine: true } : {}) } : null;
   }
+  const strList = (a, n, len) => (Array.isArray(a) ? a : []).filter((x) => typeof x === "string" && tidy(x)).map((x) => tidy(x).slice(0, len)).slice(0, n);
+  function cleanTerms(list) {
+    return (Array.isArray(list) ? list : []).filter((t) => t && typeof t.term === "string" && tidy(t.term)).slice(0, 80)
+      .map((t) => ({ term: tidy(t.term).slice(0, 40), match: strList(t.match, 6, 40), gloss: tidy(t.gloss).slice(0, 160), points: strList(t.points, 4, 160),
+        ...(typeof t.def?.quote === "string" && tidy(t.def.quote) ? { def: { p: Number(t.def.p) || 1, quote: tidy(t.def.quote) } } : {}) }));
+  }
+
+  // ── 용어 풀이: 요약 구조도의 개념과 AI 가 넉넉하게 고른 용어를, 본문에 나오는 곳마다 점선으로 긋는다.
+  //    누르면 작은 창이 그 용어 화면으로 펼쳐진다(본문 위에 카드를 띄우지 않아 읽던 문장을 가리지 않는다) ──
+  let termOccs = [];      // 본문에 나온 자리 { t: 용어, i: 문단(0부터), range }
+  let termSig = "", termParas = null;
+  let termView = null;    // 작은 창이 보여 주는 용어 { o: 지금 보는 자리, home: 처음 누른 자리, away: 다른 자리로 옮겨 갔는지 }
+  function termList() {
+    const out = [], have = new Set();
+    const add = (t) => {
+      const words = [...new Set([t.term, ...(Array.isArray(t.match) ? t.match : [])].map(tidy).filter((w) => squash(w).length >= 2))];
+      const gloss = tidy(t.gloss), points = strList(t.points, 4, 160);
+      if (!words.length || have.has(squash(t.term)) || (!gloss && !points.length)) return;
+      for (const w of words) have.add(squash(w));
+      out.push({ term: tidy(t.term), words, gloss, points, def: typeof t.def?.quote === "string" && tidy(t.def.quote) ? t.def : null });
+    };
+    for (const n of state.concepts?.nodes || []) add(n);
+    for (const t of state.terms) add(t);
+    return out;
+  }
+  // 영문 낱말은 앞뒤가 다른 영문 글자에 붙어 있으면 다른 낱말이다(arrow 안의 row). 한글은 조사가 붙으므로 따지지 않는다
+  const LATIN = /[A-Za-z]/;
+  function wordEdge(idx, at, len) {
+    const side = (k, d) => { const m = idx.map[k]; if (!m) return true; const ch = m[0].data[m[1] + d]; return ch === undefined || !LATIN.test(ch); };
+    return (!LATIN.test(idx.text[at]) || side(at, -1)) && (!LATIN.test(idx.text[at + len - 1]) || side(at + len - 1, 1));
+  }
+  function syncTerms() {
+    const list = termList();
+    const sig = JSON.stringify(list.map((t) => [t.term, t.words])) + `|${state.paras.length}`;
+    if (sig === termSig && termParas === state.paras) return;
+    termSig = sig; termParas = state.paras; termView = null; termOccs = [];
+    const body = state.paras.map((x, i) => ({ i, el: x.el })).filter((x) => !/^H[1-6]$/.test(x.el.tagName));
+    const idxs = body.map((x) => textIndex(x.el));
+    // 글 전체의 주제어처럼 본문 문단 절반 넘게 나오는 용어는 긋지 않는다. 거의 모든 문장에 줄이 생겨 아무것도 가리키지 못한다
+    const limit = Math.max(3, body.length / 2);
+    const words = [];
+    for (const t of list) {
+      const qs = t.words.map(squash);
+      if (idxs.filter((idx) => qs.some((q) => idx.text.includes(q))).length > limit) continue;
+      for (const q of qs) words.push({ q, t });
+    }
+    words.sort((a, b) => b.q.length - a.q.length); // 긴 말부터(「완전 함수 종속」 안의 「함수 종속」을 따로 긋지 않게)
+    body.forEach((x, k) => {
+      const idx = idxs[k], found = [];
+      for (const w of words) for (const at of occurrences(idx.text, w.q)) {
+        if (found.some((f) => at < f.at + f.len && at + w.q.length > f.at) || !wordEdge(idx, at, w.q.length)) continue;
+        found.push({ at, len: w.q.length, t: w.t });
+      }
+      found.sort((a, b) => a.at - b.at);
+      for (const f of found) termOccs.push({ t: f.t, i: x.i, range: spanRange(idx, f.at, f.len) });
+    });
+  }
 
   // ── 저장: 고친 결과까지 페이지 주소별로 남긴다. p 는 이 페이지 문단 번호라 다시 열면 그대로 맞는다 ──
   function serialize({ exporting = false } = {}) {
@@ -359,6 +417,7 @@
       ],
       boxes: sortedBoxes().map((b) => ({ p: boxOrder(b) + 1 || 1, label: b.label, text: b.text, ...(b.pre ? { pre: b.pre } : {}), ...(b.answer ? { answer: b.answer } : {}), ...(b.mine ? { mine: true } : {}) })),
       ...(state.concepts ? { concepts: state.concepts } : {}),
+      ...(state.terms.length ? { terms: state.terms } : {}),
       ...(state.imps.length ? { importance: state.imps.map((x) => ({ p: x.i + 1, to: x.j + 1, level: x.level, ...(x.why ? { why: x.why } : {}), ...(x.mine ? { mine: true } : {}) })) } : {}),
       ...(state.trs.size ? { translations: [...state.trs].sort((a, b) => a[0] - b[0])
         .map(([i, t]) => ({ p: i + 1, text: t.text, ...(t.mine ? { mine: true } : {}) })) } : {}),
@@ -367,7 +426,7 @@
       ...(HOST?.extraData?.() || {}), // 품는 화면의 층(PDF 노트의 손글씨 ink)
     };
   }
-  const hasData = () => !!(state.marks.length || state.orphans.length || state.boxes.length || state.concepts || state.imps.length || state.trs.size || state.quiz.length || state.quizNotes.size || HOST?.hasExtra?.());
+  const hasData = () => !!(state.marks.length || state.orphans.length || state.boxes.length || state.concepts || state.terms.length || state.imps.length || state.trs.size || state.quiz.length || state.quizNotes.size || HOST?.hasExtra?.());
   let saveTimer = 0;
   // 고칠 때마다 저장 창에 보낸다. 저장 창이 닫혀 있으면 「저장하지 않은 변경」으로 남겨 두었다가 다시 연결되면 보낸다
   function save() {
@@ -625,6 +684,25 @@
     .mini .act:hover:not(:disabled) { background: #eef1f4; }
     .mini .act:disabled { opacity: .45; cursor: default; }
     .mini .act.sw.on { background: #fff7ed; border-color: #f59e0b; color: #b45309; font-weight: 600; }
+    /* 용어 풀이: 본문의 점선 낱말을 누르면 작은 창이 이 화면으로 펼쳐진다 */
+    .mini.term { width: min(340px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: auto; padding: 9px 12px 12px; }
+    .tv { display: flex; flex-direction: column; gap: 7px; margin-top: 8px; font-size: 13px; line-height: 1.6; cursor: default; }
+    .tv-term { font-size: 16px; font-weight: 700; line-height: 1.35; }
+    .tv-sub { font-size: 11.5px; color: #6b7280; margin-top: -5px; }
+    .tv-gloss { margin: 0; font-size: 13.5px; }
+    .tv-pts { margin: 0; padding-left: 18px; color: #4b5563; font-size: 12.5px; }
+    .tv-src { display: flex; flex-direction: column; gap: 5px; align-items: flex-start; border-top: 1px solid #f1f2f4; padding-top: 8px; }
+    .tv-lbl { font-size: 11.5px; color: #6b7280; }
+    .tv blockquote { margin: 0; padding: 5px 9px; border-left: 3px solid #0f766e; background: #f6f8fa; border-radius: 0 6px 6px 0; font-size: 12.5px; align-self: stretch; }
+    .tv-ai { margin: 0; padding: 7px 9px; border-radius: 8px; background: #fff7ed; font-size: 12.5px; }
+    .tv-ai b { color: #b45309; }
+    .tv-nav { display: flex; align-items: center; gap: 4px; border-top: 1px solid #f1f2f4; padding-top: 8px; font-size: 12px; color: #6b7280; }
+    .tv-nav .act { padding: 2px 10px; }
+    .mini .act.tv-back { background: #f0fdfa; border-color: #0f766e; color: #0f766e; padding: 5px 10px; }
+    /* 좁은 화면: 위쪽 본문(누른 낱말)이 보이게 아래 절반에 띄운다. 옮겨 둔 자리(인라인 위치)보다 앞선다 */
+    @media (max-width: 640px) {
+      .mini.term { top: auto !important; bottom: 12px; left: 12px !important; right: 12px !important; width: auto; max-width: none; max-height: 52vh; }
+    }
     @media (pointer: coarse) {
       .mini { font-size: 13px; padding: 9px 12px; }
       .mini .act { padding: 6px 12px; }
@@ -688,6 +766,13 @@
     :host([data-theme="dark"]) .mini .it .eye { color: #9ca3af; }
     :host([data-theme="dark"]) .mini .it.on .lab { background: #3b2f12; box-shadow: inset 0 0 0 1px #b45309; }
     :host([data-theme="dark"]) .mini-acts { border-top-color: #343a43; }
+    :host([data-theme="dark"]) .tv-sub, :host([data-theme="dark"]) .tv-lbl, :host([data-theme="dark"]) .tv-nav { color: #9ca3af; }
+    :host([data-theme="dark"]) .tv-pts { color: #d1d5db; }
+    :host([data-theme="dark"]) .tv-src, :host([data-theme="dark"]) .tv-nav { border-top-color: #343a43; }
+    :host([data-theme="dark"]) .tv blockquote { background: #2a2f37; border-left-color: #34d399; }
+    :host([data-theme="dark"]) .tv-ai { background: #33270f; }
+    :host([data-theme="dark"]) .tv-ai b { color: #fbbf24; }
+    :host([data-theme="dark"]) .mini .act.tv-back { background: #10302a; border-color: #34d399; color: #6ee7b7; }
     :host([data-theme="dark"]) .mini .act { background: #2a2f37; border-color: #3d434d; color: #e5e7eb; }
     :host([data-theme="dark"]) .mini .act:hover:not(:disabled) { background: #333943; }
     :host([data-theme="dark"]) .mini .act.sw.on { background: #3b2f12; border-color: #b45309; color: #fbbf24; }
@@ -814,7 +899,12 @@
   let dragEndAt = 0; // 끌기를 막 끝낸 손가락·마우스의 「누르기」 는 무시한다(놓자마자 다른 것이 열리지 않게)
 
   const colors = () => MARK_COLORS[state.tpl] || MARK_COLORS.tech;
+  // 용어 점선: 표시 색과 겹치지 않게 회청색으로, 물결 밑줄보다 한 칸 아래에 긋는다. 지금 작은 창이 보여 주는 자리는 옅은 청록 바탕
+  const TERM_CSS = `
+::highlight(nl-ov-term){text-decoration:underline dotted rgba(100,116,139,.95);text-decoration-thickness:1.5px;text-underline-offset:6px}
+::highlight(nl-ov-term-on){background-color:rgba(20,184,166,.22)}`;
   function paint() {
+    syncTerms();
     const c = colors(), f = state.focus;
     // 또렷하게 할 때: 본문 글자 전체를 흐리게(nl-ov-dim) 칠하고, 고른 종류만 그 위에 진한 글자색으로 다시 칠한다(우선순위가 높은 칠이 이긴다)
     const ink = "#111827";
@@ -822,7 +912,7 @@
 ::highlight(nl-ov-key){color:${c.circle};text-decoration:underline solid ${c.circle};text-decoration-thickness:2px;text-underline-offset:3px}
 ::highlight(nl-ov-hl){background-color:${c.hl}${f === "highlight" ? `;color:${ink}` : ""}}
 ::highlight(nl-ov-wave){text-decoration:underline wavy ${c.wave};text-decoration-thickness:1.5px;text-underline-offset:4px${f === "wave" ? `;color:${ink}` : ""}}
-::highlight(nl-ov-flash){background-color:rgba(245,158,11,.4)}`;
+::highlight(nl-ov-flash){background-color:rgba(245,158,11,.4)}${TERM_CSS}`;
     panel.style.setProperty("--circle", c.circle); panel.style.setProperty("--hl", c.hl); panel.style.setProperty("--wave", c.wave);
     if (!window.CSS?.highlights) return;
     const visible = (k) => state.show[k] && (!f || f === k);
@@ -833,6 +923,10 @@
     set("nl-ov-key", of("circle"), 2);
     set("nl-ov-hl", of("highlight"), 1);
     set("nl-ov-wave", of("wave"), 1);
+    // 용어 점선은 표시 한 종류만 또렷하게 볼 때는 감춘다
+    const terms = state.show.terms && !f;
+    set("nl-ov-term", terms ? termOccs.map((o) => o.range) : [], 0);
+    set("nl-ov-term-on", terms && termView ? [termView.o.range] : [], 3);
   }
   // PDF 처럼 글자 층이 투명한 화면: 글자색을 바꾸면 원본 그림 위에 다른 글꼴의 글자가 겹쳐 보인다. 그래서 바탕색과 밑줄로만 칠하고,
   // 흐리게 하기는 글자 위에 흰 막을 덮는 방식으로 한다(또렷하게 할 종류는 제 색 바탕을 한 겹 더 깐다)
@@ -842,10 +936,10 @@
 ::highlight(nl-ov-key){background-color:${tint(c.circle, f === "circle" ? 0.3 : 0.14)};text-decoration:underline solid ${c.circle};text-decoration-thickness:2px;text-underline-offset:2px}
 ::highlight(nl-ov-hl){background-color:${c.hl}}
 ::highlight(nl-ov-wave){${f === "wave" ? `background-color:${tint(c.wave, 0.16)};` : ""}text-decoration:underline wavy ${c.wave};text-decoration-thickness:1.5px;text-underline-offset:2px}
-::highlight(nl-ov-flash){background-color:rgba(245,158,11,.4)}`;
+::highlight(nl-ov-flash){background-color:rgba(245,158,11,.4)}${TERM_CSS}`;
   }
   // 작은 상자·패널에서 보이기/숨기기, 또렷하게를 바꾼 다음 다시 그린다
-  function setShow(k, on) { state.show[k] = on; if (!on && state.focus === k) state.focus = null; refreshMarks(); }
+  function setShow(k, on) { state.show[k] = on; if (!on && state.focus === k) state.focus = null; if (k === "terms" && !on) termView = null; refreshMarks(); }
   function setFocus(k) { state.focus = state.focus === k ? null : k; if (state.focus) state.show[k] = true; refreshMarks(); }
   function refreshMarks() { paint(); drawLayer(); renderResult(); }
 
@@ -1256,11 +1350,17 @@
     const eyeOnly = (k, name, num) => h("span", { class: `it${state.show[k] ? "" : " off"}` },
       h("button", { class: "eye", title: state.show[k] ? "본문에서 숨기기" : "본문에 보이기", onclick: stop(() => setShow(k, !state.show[k])) }, eye(state.show[k])),
       h("span", { class: "lab" }, `${name} `, h("b", {}, String(num))));
+    syncTerms();
+    pill.classList.toggle("term", !!termView);
+    const head = h("div", { class: "mini-head" }, h("b", {}, "notelayer"),
+      h("span", { class: storeLive ? "dot on" : "dot", title: LOCAL ? (storeLive ? "이 PC 에 저장 중" : "저장소를 여는 중") : storeLive ? "저장 창과 연결됨" : "저장 창이 닫혀 있음" }),
+      h("span", { class: "grow" }),
+      termView ? h("button", { class: "act", title: "용어 풀이를 닫고 작은 창으로 돌아갑니다(Esc)", onclick: stop(closeTerm) }, "작게")
+        : COMPACT ? null : h("span", { class: "open" }, "펼치기 ▾"),
+      COMPACT && !HOST ? h("button", { class: "x", title: "닫기(저장한 표시는 남는다). 즐겨찾기 버튼을 다시 누르면 열린다", onclick: stop(destroy) }, "✕") : null);
+    if (termView) { pill.replaceChildren(head, termBody(stop)); placeMini(); return; }
     pill.replaceChildren(
-      h("div", { class: "mini-head" }, h("b", {}, "notelayer"),
-        h("span", { class: storeLive ? "dot on" : "dot", title: LOCAL ? (storeLive ? "이 PC 에 저장 중" : "저장소를 여는 중") : storeLive ? "저장 창과 연결됨" : "저장 창이 닫혀 있음" }),
-        h("span", { class: "grow" }), COMPACT ? null : h("span", { class: "open" }, "펼치기 ▾"),
-        COMPACT && !HOST ? h("button", { class: "x", title: "닫기(저장한 표시는 남는다). 즐겨찾기 버튼을 다시 누르면 열린다", onclick: stop(destroy) }, "✕") : null),
+      head,
       h("div", { class: "mini-items" }, hasData()
         ? [item("circle", h("span", { class: "mk mk-key" }, "가"), t.marks.circle, n("circle")),
           item("highlight", h("span", { class: "mk mk-hl" }), t.marks.highlight, n("highlight")),
@@ -1268,6 +1368,7 @@
           item("boxes", null, "설명", state.boxes.length),
           ...(state.imps.length ? [eyeOnly("imp", "중요도", state.imps.length)] : []),
           ...(state.trs.size ? [eyeOnly("tr", "번역", state.trs.size)] : []),
+          ...(termOccs.length ? [eyeOnly("terms", "용어 풀이", termOccs.length)] : []),
           ...(state.orphans.length ? [h("span", {}, `제자리를 잃은 표시 `, h("b", {}, String(state.orphans.length)))] : [])]
         : [h("span", { class: "mini-note" }, !COMPACT ? "눌러서 요청문을 복사하고 AI 답을 붙여 넣으세요"
           : !LOCAL && !storeLive && storeProblem ? storeProblem
@@ -1287,6 +1388,25 @@
         !LOCAL && BASE ? h("button", { class: "act", title: storeLive ? "열려 있는 저장 창으로 옮겨 갑니다" : "저장 창을 엽니다",
           onclick: stop(goStore) }, "저장 창 ↗") : null) : "");
     placeMini(); // 내용 폭이 바뀌어도 옮겨 둔 자리에서 화면 밖으로 나가지 않게
+  }
+  // 작은 창의 용어 화면: 풀이·핵심 → 원문 정의(없으면 AI 풀이라는 안내) → 같은 용어가 나온 다른 자리 오가기 → 읽던 곳으로 돌아가기
+  function termBody(stop) {
+    const { o, away } = termView, t = o.t;
+    const list = termOccs.filter((x) => x.t === t), k = list.indexOf(o);
+    const word = tidy(o.range.toString());
+    return h("div", { class: "tv", onclick: (e) => e.stopPropagation() },
+      h("div", { class: "tv-term" }, t.term),
+      squash(word) !== squash(t.term) ? h("div", { class: "tv-sub" }, `본문의 「${word}」`) : null,
+      t.gloss ? h("p", { class: "tv-gloss" }, t.gloss) : null,
+      t.points.length ? h("ul", { class: "tv-pts" }, t.points.map((s) => h("li", {}, s))) : null,
+      t.def
+        ? h("div", { class: "tv-src" }, h("span", { class: "tv-lbl" }, "원문에서 설명한 곳"), h("blockquote", {}, `“${t.def.quote}”`),
+          h("button", { class: "act", onclick: stop(() => { termView.away = true; showQuote(t.def); renderMini(); }) }, "원문에서 보기"))
+        : h("p", { class: "tv-ai" }, h("b", {}, "이 글에는 정의가 없습니다. "), "위 풀이는 AI 가 붙인 것이라, 확인이 필요하면 다른 자료와 맞춰 보세요."),
+      h("div", { class: "tv-nav" }, h("span", { class: "grow" }, `이 글에서 ${list.length}곳 중 ${k + 1}번째`),
+        h("button", { class: "act", title: "앞에 나온 곳", "aria-label": "앞에 나온 곳", disabled: k <= 0, onclick: stop(() => moveTerm(list[k - 1])) }, "◀"),
+        h("button", { class: "act", title: "뒤에 나온 곳", "aria-label": "뒤에 나온 곳", disabled: k >= list.length - 1, onclick: stop(() => moveTerm(list[k + 1])) }, "▶")),
+      away ? h("button", { class: "act tv-back", onclick: stop(termBack) }, "읽던 곳으로 돌아가기") : null);
   }
   const foundMsg = h("p", { class: "muted" });
   // 설명 분량: 요청문에 넣을 설명 규칙을 고른다. 고른 값은 이 사이트에 기억한다
@@ -1455,7 +1575,7 @@
   }
   function clearSaved() {
     if (!confirm("이 페이지의 표시·설명을 모두 지울까요? 저장한 것도 지워집니다.")) return;
-    state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.imps = []; state.quiz = []; state.quizNotes = new Map(); state.concepts = null; state.trs = new Map();
+    state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.imps = []; state.quiz = []; state.quizNotes = new Map(); state.concepts = null; state.terms = []; state.trs = new Map();
     paint(); drawLayer(); renderResult(); save();
     setMsg(applyMsg, "모두 지웠습니다.");
   }
@@ -1492,6 +1612,9 @@
     const keepMine = !restored && c && state.concepts?.mine
       && !confirm("요약 구조도를 직접 고친 적이 있습니다. 새 답의 요약으로 바꿀까요?\n(취소를 누르면 고친 요약을 그대로 둡니다)");
     if ((c || restored) && !keepMine) state.concepts = c;
+    // 용어 풀이에 더 쓸 용어: 새 답에 있으면 바꾸고, 없으면 지금 것을 둔다
+    const tm = cleanTerms(result.terms);
+    if (restored || tm.length) state.terms = tm;
     // 퀴즈: 새 답에 문제가 있으면 바꾸고, 없으면 지금 문제를 그대로 둔다. 문제가 바뀌면 풀던 차례도 처음부터
     if (restored || a.quiz.length) { state.quiz = a.quiz; quizRun = null; }
     // 퀴즈에 내가 적은 답: 저장본을 열 때만 되살린다. 새 AI 답을 붙여도 지우지 않는다(내가 쓴 글이라)
@@ -1505,6 +1628,7 @@
     const placed = a.marks.length;
     const parts = [`${restored ? "저장한 " : ""}표시 ${placed}/${a.total}개, 설명 ${a.boxes.length}개를 얹었습니다`];
     if (state.concepts) parts.push(`개념 ${state.concepts.nodes.length}개`);
+    if (termOccs.length) parts.push(`용어 풀이 ${termOccs.length}곳`);
     if (a.trs.length) parts.push(`번역 ${a.trs.length}문단`);
     if (a.imps.length) parts.push(`중요도 ${a.imps.length}묶음`);
     if (a.quiz.length) parts.push(`퀴즈 ${a.quiz.length}문제`);
@@ -2583,8 +2707,42 @@
     }
     return hits.sort((a, b) => a.quote.length - b.quote.length)[0] || null;
   }
+  // 누른 자리의 용어. 글자 자리로 문단을 좁힌 다음, 그 문단 용어의 글자 네모 안에 눌렀는지 본다(줄 끝 빈 곳을 눌러도 잡히지 않게)
+  function termAt(x, y) {
+    if (!state.show.terms || state.focus || !termOccs.length) return null;
+    const c = caretAt(x, y), i = c ? paraIndexOf(c.node) : -1;
+    if (i < 0) return null;
+    for (const o of termOccs) {
+      if (o.i !== i) continue;
+      for (const r of o.range.getClientRects()) if (x >= r.left - 1 && x <= r.right + 1 && y >= r.top - 2 && y <= r.bottom + 6) return o;
+    }
+    return null;
+  }
+  // 마우스를 용어 위에 올리면 손가락 모양으로 바꾼다(칠하기로 그린 점선에는 모양을 따로 줄 수 없다)
+  let termHover = false, hoverRaf = 0;
+  function setTermHover(on) { if (on !== termHover) { termHover = on; document.documentElement.style.cursor = on ? "pointer" : ""; } }
+  function onTermHover(e) {
+    if (e.pointerType !== "mouse") return;
+    const skip = state.editing || e.buttons || e.composedPath().includes(host) || inNote(e), x = e.clientX, y = e.clientY;
+    cancelAnimationFrame(hoverRaf);
+    hoverRaf = requestAnimationFrame(() => setTermHover(!skip && !!termAt(x, y)));
+  }
+  function scrollToRange(range) { (range.startContainer.parentElement || state.root).scrollIntoView({ behavior: "smooth", block: "center" }); }
+  function openTerm(o) {
+    termView = { o, home: o, away: false };
+    if (pill.hidden) setMin(true); // 패널을 펼쳐 둔 채 용어를 누르면 작은 창으로 돌아와 보여 준다
+    paint(); renderMini();
+    // 좁은 화면에서는 작은 창이 아래 절반에 뜬다. 누른 낱말이 그 밑에 깔리면 위쪽으로 올린다
+    if (innerWidth <= 640) {
+      const r = o.range.getBoundingClientRect();
+      if (r.top > innerHeight * 0.4) scrollBy({ top: r.top - innerHeight * 0.18, behavior: "smooth" });
+    }
+  }
+  function moveTerm(o) { if (!o || !termView) return; termView.o = o; termView.away = true; scrollToRange(o.range); paint(); renderMini(); }
+  function termBack() { if (!termView) return; const { home } = termView; termView = { o: home, home, away: false }; scrollToRange(home.range); paint(); renderMini(); }
+  function closeTerm() { termView = null; paint(); renderMini(); }
   // 본문 속 카드 안을 누르거나 글자를 고를 때는 표시 도구를 띄우지 않는다
-  const inNote = (e) => e.composedPath().some((n) => n.tagName === "NOTELAYER-NOTE");
+  const inNote =(e) => e.composedPath().some((n) => n.tagName === "NOTELAYER-NOTE");
   // 손가락·펜으로 고를 때(아이패드): 선택이 바뀐 뒤 0.4초 동안 그대로면 도구를 띄운다. 마우스로 고를 때는 mouseup 이 맡는다
   let lastPointer = "mouse", selT = 0;
   function onPointerKind(e) { lastPointer = e.pointerType || "mouse"; }
@@ -2628,6 +2786,11 @@
   }
   function onClick(e) {
     if (!state.editing && !pop.hidden && !e.composedPath().includes(host)) hidePop();
+    // 용어 누르기. 링크 안의 낱말은 링크가 먼저다(위키백과처럼 용어가 거의 다 링크인 곳에서 페이지를 못 옮기면 안 된다)
+    if (!state.editing && !e.composedPath().includes(host) && !inNote(e) && !e.target.closest?.("a[href]") && getSelection()?.isCollapsed !== false) {
+      const o = termAt(e.clientX, e.clientY);
+      if (o) { openTerm(o); return; }
+    }
     if (!state.editing || e.composedPath().includes(host) || inNote(e)) return;
     if (Date.now() - dragEndAt < 400) return;
     const sel = getSelection();
@@ -2640,6 +2803,7 @@
   function onKey(e) {
     if (e.key !== "Escape") return;
     if (sheet) { closeSummary(); return; }
+    if (termView) { closeTerm(); return; }
     hidePop(); hideKnobs(); if (state.focus) setFocus(state.focus);
   }
   function onScroll() { queueDraw(); if (!pop.hidden && pop.dataset.keep !== "1") hidePop(); }
@@ -2763,7 +2927,7 @@
       const r = await send("load");
       if (r.record?.data && (replace || !hasData())) {
         const data = r.record.data;
-        if (replace) { state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.imps = []; state.quiz = []; state.quizNotes = new Map(); state.concepts = null; state.trs = new Map(); }
+        if (replace) { state.marks = []; state.orphans = []; state.attaching = null; state.boxes = []; state.imps = []; state.quiz = []; state.quizNotes = new Map(); state.concepts = null; state.terms = []; state.trs = new Map(); }
         if (TEMPLATES[data.tpl]) { state.tpl = data.tpl; tplSelect.value = data.tpl; }
         const res = apply(data, { restored: true });
         setSaved(`${replace ? "저장 창에서 불러온 파일로 다시 칠했습니다" : "저장해 둔 표시를 불러왔습니다"} · ${fmtTime(r.record.savedAt)}${r.from === "folder" ? " · 폴더의 파일에서" : ""}`
@@ -2816,9 +2980,11 @@
     document.removeEventListener("selectionchange", onSelChange);
     document.removeEventListener("click", onClick, true);
     document.removeEventListener("keydown", onKey, true);
+    document.removeEventListener("pointermove", onTermHover, true);
+    cancelAnimationFrame(hoverRaf); setTermHover(false);
     ro.disconnect(); mapObserver?.disconnect();
     if (state.popup) try { state.popup.close(); } catch {}
-    if (window.CSS?.highlights) for (const k of ["nl-ov-dim", "nl-ov-key", "nl-ov-hl", "nl-ov-wave", "nl-ov-flash"]) CSS.highlights.delete(k);
+    if (window.CSS?.highlights) for (const k of ["nl-ov-dim", "nl-ov-key", "nl-ov-hl", "nl-ov-wave", "nl-ov-flash", "nl-ov-term", "nl-ov-term-on"]) CSS.highlights.delete(k);
     for (const x of inlineHosts.splice(0)) x.remove();
     closeSummary(); host.remove(); pageStyle.remove();
     delete window.NL_OVERLAY;
@@ -2851,6 +3017,7 @@
   document.addEventListener("pointerdown", onPointerKind, true);
   document.addEventListener("selectionchange", onSelChange);
   document.addEventListener("keydown", onKey, true);
+  document.addEventListener("pointermove", onTermHover, { capture: true, passive: true });
   const ro = new ResizeObserver(queueDraw);
   ro.observe(document.body);
 
@@ -2895,7 +3062,7 @@
         record: { v: 1, tpl: state.tpl, ...serialize() }, paragraphs: state.paras.map((x) => x.text),
       };
     },
-    restore: (data) => { state.marks = []; state.orphans = []; state.boxes = []; state.imps = []; state.quiz = []; state.quizNotes = new Map(); state.concepts = null; state.trs = new Map(); return apply(data, { restored: true }); },
+    restore: (data) => { state.marks = []; state.orphans = []; state.boxes = []; state.imps = []; state.quiz = []; state.quizNotes = new Map(); state.concepts = null; state.terms = []; state.trs = new Map(); return apply(data, { restored: true }); },
     destroy,
   };
 })();
