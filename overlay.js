@@ -1664,7 +1664,9 @@
     const context = [i - 1, last + 1].filter((k) => k >= 0 && k < P.length).map(pick);
     const els = new Set(targets.map((x) => P[x.p - 1].el));
     const existing = state.boxes.filter((b) => els.has(b.el)).map((b) => ({ p: boxOrder(b) + 1, text: b.text }));
-    const text = PROMPT.buildFocus({ title: document.title, targets, context, existing, template: TEMPLATES[state.tpl] });
+    syncTerms();
+    const terms = [...new Set(termOccs.filter((o) => targets.some((x) => x.p === o.i + 1)).map((o) => o.t.term))];
+    const text = PROMPT.buildFocus({ title: document.title, targets, context, existing, terms, template: TEMPLATES[state.tpl] });
     getSelection()?.removeAllRanges(); hidePop();
     const ok = await copyText(text);
     setMin(false);
@@ -3059,6 +3061,7 @@
         tpl: state.tpl, template: TEMPLATES[state.tpl], colors: colors(),
         marks: state.marks.map((m) => ({ kind: m.kind, quote: m.quote, mine: !!m.mine, rects: lineRects(m.range) })),
         notes: [...notes.values()], concepts: state.concepts,
+        terms: (syncTerms(), [...new Set(termOccs.map((o) => o.t))].map((t) => ({ term: t.term, gloss: t.gloss, def: !!t.def }))),
         record: { v: 1, tpl: state.tpl, ...serialize() }, paragraphs: state.paras.map((x) => x.text),
       };
     },
