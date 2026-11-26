@@ -372,9 +372,7 @@ window.NL_DOCS.push({
               "p": 4,
               "quote": "HTTP/2 addresses these issues"
             },
-            "match": [
-              "HTTP/2"
-            ],
+            "match": [],
             "gloss": "HTTP 의 의미는 그대로 두고 연결을 쓰는 방식을 바꿈",
             "points": [
               "HTTP 의 뜻(메서드·헤더·상태 코드)은 그대로",

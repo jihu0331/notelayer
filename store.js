@@ -20,11 +20,31 @@
   const FOLDER_TAB = new URLSearchParams(location.search).has("folder") || IMPORT_TAB;
   const IN_POPUP = !!window.opener && !FOLDER_TAB;
   const bc = "BroadcastChannel" in window ? new BroadcastChannel("notelayer-store") : null;
-  let folderState = "none", folderName = ""; // none | granted | prompt | stuck(확인이 끝나지 않음)
+  let folderState = "none", folderName = "", folderHandle = null; // none | granted | prompt | stuck(확인이 끝나지 않음)
   async function folder(ask = false) {
     const r = await S.folder(ask);
-    folderState = r.state; folderName = r.name || "";
+    folderState = r.state; folderName = r.name || ""; folderHandle = r.handle || null;
     return r.dir;
+  }
+  // 「폴더 다시 허용」: 누른 순간 바로 권한을 묻는다(앞에 다른 기다림이 끼면 크롬이 「사용자가 누른 동작이 아니다」로 보고 거절한다).
+  // 결과는 무엇이든 창 위쪽에 글로 남긴다(전에는 실패·거절이 조용히 지나가 눌러도 아무 일이 없는 것처럼 보였다)
+  async function regrant() {
+    const h = folderHandle;
+    if (!h) { status("다시 허용할 폴더를 찾지 못했습니다. 「다른 폴더로 바꾸기」로 폴더를 새로 골라 주세요.", true); return; }
+    status("폴더 권한을 묻는 중… (크롬 주소창 아래에 묻는 창이 뜹니다)");
+    let p;
+    try { p = await h.requestPermission({ mode: "readwrite" }); }
+    catch (err) {
+      status(err?.name === "NotFoundError"
+        ? `「${h.name}」 폴더를 찾지 못했습니다. 옮기거나 지웠다면 「다른 폴더로 바꾸기」로 다시 고르거나 「연결 끊기」를 누르세요.`
+        : `폴더 권한을 받지 못했습니다(${err?.name || ""} ${err?.message || err}). 「다른 폴더로 바꾸기」로 다시 골라 주세요.`, true);
+      render(); return;
+    }
+    if (p !== "granted") { status(`「${h.name}」 폴더 쓰기를 허용하지 않았습니다. 폴더 없이 이 브라우저에만 저장합니다.`, true); render(); return; }
+    status(`「${h.name}」 폴더를 다시 쓸 수 있게 됐습니다. 이 브라우저에만 있던 기록을 폴더에도 쓰는 중…`);
+    try { await syncFolder(); } catch {}
+    status(`「${h.name}」 폴더를 다시 연결했습니다. 이제 저장할 때마다 이 폴더에도 파일로 씁니다.${FOLDER_TAB ? " 이 탭은 닫아도 됩니다." : ""}`);
+    folderChanged(); drawn.folder = null; render();
   }
 
   // ── 표시 층과 주고받기 ──
@@ -123,9 +143,13 @@
         folderState === "granted" ? `${label} 폴더에도 저장하고 있습니다.`
           : folderState === "stuck" ? `${label} 폴더의 권한 확인이 끝나지 않아 지금은 폴더 없이 이 브라우저에만 저장합니다. 계속 이러면 「연결 끊기」를 누른 다음 폴더를 다시 고르세요.`
           : `${label} 폴더를 쓰려면 다시 허용해야 합니다(브라우저를 새로 열면 다시 묻습니다).`));
-      if (folderState === "prompt") btns.push(folderAction("폴더 다시 허용", true, async () => { await folder(true); await syncFolder(); folderChanged(); render(); }));
+      if (folderState === "prompt") btns.push(folderAction("폴더 다시 허용", true, regrant));
       btns.push(folderAction("다른 폴더로 바꾸기", false, pickFolder));
-      btns.push(el("button", { onclick: async () => { await delMeta("dir"); folderChanged(); render(); } }, "연결 끊기"));
+      btns.push(el("button", { onclick: async () => {
+        try { await delMeta("dir"); status("폴더 연결을 끊었습니다. 기록은 이 브라우저에 그대로 남고, 앞으로도 이 브라우저에 저장합니다."); }
+        catch (err) { status(`연결을 끊지 못했습니다: ${err?.message || err}`, true); }
+        folderChanged(); drawn.folder = null; render();
+      } }, "연결 끊기"));
     }
     $("folderBtns").replaceChildren(...btns);
   }

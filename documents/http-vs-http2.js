@@ -283,8 +283,7 @@ window.NL_DOCS.push({
               "quote": "패킷 하나가 사라지면"
             },
             "match": [
-              "TCP 층의 HOL 블로킹",
-              "패킷 하나가 사라지면"
+              "TCP 층의 HOL 블로킹"
             ],
             "gloss": "잃은 패킷을 다시 받을 때까지 그 뒤 데이터가 멈추는 대기",
             "points": [
@@ -314,9 +313,7 @@ window.NL_DOCS.push({
               "p": 2,
               "quote": "도메인 하나에 연결을 여러 개 열었다"
             },
-            "match": [
-              "연결을 여러 개"
-            ],
+            "match": [],
             "gloss": "도메인마다 연결을 여럿(크롬은 6개) 열어 병렬로 받음. 연결 비용이 큼",
             "points": [
               "크롬은 도메인 하나에 연결을 6개까지",
@@ -588,9 +585,7 @@ window.NL_DOCS.push({
               "p": 2,
               "quote": "하지만 연결마다 TCP 핸드셰이크"
             },
-            "match": [
-              "연결마다"
-            ],
+            "match": [],
             "gloss": "새 연결마다 TCP·TLS 준비 과정을 다시 치러야 하는 부담",
             "points": [
               "연결 하나를 열려면 TCP 핸드셰이크 + TLS 협상",
@@ -645,9 +640,7 @@ window.NL_DOCS.push({
               "p": 3,
               "quote": "HTTP/2는 하나의 TCP 연결 위에서"
             },
-            "match": [
-              "하나의 TCP 연결"
-            ],
+            "match": [],
             "gloss": "HTTP/2 는 연결 하나에 메시지를 조각내 섞어 보냄",
             "points": [
               "연결 하나에 여러 요청을 섞어 보냄",
@@ -701,8 +694,7 @@ window.NL_DOCS.push({
               "quote": "한 번 보낸 헤더는"
             },
             "match": [
-              "HPACK",
-              "헤더"
+              "HPACK"
             ],
             "gloss": "한 번 보낸 헤더는 양쪽이 기억해 두고 번호만 보냄",
             "points": [
@@ -720,9 +712,7 @@ window.NL_DOCS.push({
               "p": 5,
               "quote": "패킷 하나가 사라지면"
             },
-            "match": [
-              "패킷 하나가 사라지면"
-            ],
+            "match": [],
             "gloss": "TCP 는 순서를 지키느라 패킷 하나만 잃어도 뒤가 전부 멈춤",
             "points": [
               "TCP 는 받은 데이터를 순서대로만 앱에 넘김",
@@ -760,8 +750,7 @@ window.NL_DOCS.push({
               "quote": "브라우저에서는 보안 연결"
             },
             "match": [
-              "HTTPS",
-              "보안 연결"
+              "HTTPS"
             ],
             "gloss": "브라우저는 암호화된 연결 위의 HTTP/2 만 씀",
             "points": [
