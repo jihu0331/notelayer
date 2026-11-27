@@ -151,53 +151,6 @@ window.NL_DOCS.push({
         { "p": 5, "to": 5, "level": "rare", "why": "서버·브라우저가 처리" },
         { "p": 6, "to": 6, "level": "rare", "why": "라이브러리가 처리" }
       ],
-      "marks": [
-        {
-          "p": 2,
-          "kind": "circle",
-          "quote": "pipelining"
-        },
-        {
-          "p": 2,
-          "kind": "circle",
-          "quote": "head-of-line blocking"
-        },
-        {
-          "p": 3,
-          "kind": "circle",
-          "quote": "congestion window"
-        },
-        {
-          "p": 4,
-          "kind": "circle",
-          "quote": "interleaving"
-        },
-        {
-          "p": 6,
-          "kind": "circle",
-          "quote": "binary message framing"
-        },
-        {
-          "p": 4,
-          "kind": "highlight",
-          "quote": "it allows interleaving of messages on the same connection and uses an efficient coding for HTTP fields"
-        },
-        {
-          "p": 5,
-          "kind": "highlight",
-          "quote": "TCP head-of-line blocking is not addressed by this protocol"
-        },
-        {
-          "p": 1,
-          "kind": "wave",
-          "quote": "the underlying transport"
-        },
-        {
-          "p": 3,
-          "kind": "wave",
-          "quote": "causing the initial TCP congestion window to quickly fill"
-        }
-      ],
       "boxes": [
         {
           "p": 1,

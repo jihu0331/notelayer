@@ -235,7 +235,7 @@
       const c = S.counts(d.rec?.data);
       const meta = d.folderOnly ? ["연결한 폴더에만 있음 — 열면 이 브라우저로 가져옵니다"]
         : [`${d.pages}쪽`, size(d.size), `넣은 날 ${fmt(d.addedAt)}`];
-      if (d.rec) meta.push(`표시 ${c.marks} · 설명 ${c.boxes}`, `저장 ${fmt(d.rec.savedAt)}`);
+      if (d.rec) meta.push(`${c.marks ? `내 표시 ${c.marks} · ` : ""}설명 ${c.boxes}`, `저장 ${fmt(d.rec.savedAt)}`);
       return el("li", {},
         el("div", { class: "grow" },
           el("a", { class: "name", href: `pdf.html?doc=${encodeURIComponent(d.id)}`, title: d.name }, d.name),
@@ -487,7 +487,7 @@
 
   // ── 주석 넣은 PDF 내보내기 / 첨부된 기록 되살리기 ──
   // 내보낸 PDF 한 장에 두 가지를 담는다.
-  //  1) PDF 표준 주석: 핵심어=밑줄(Underline), 중요한 문장=형광펜(Highlight), 확인 필요=물결 밑줄(Squiggly),
+  //  1) PDF 표준 주석: 내가 단 표시(동그라미 자리=밑줄 Underline, 형광펜=Highlight, 물결=Squiggly),
   //     문단별 번역·설명=메모(Text), 1쪽 왼쪽 위에 요약 메모. 굿노트·삼성 노트·PDF 뷰어에서 보인다
   //  2) 첨부 파일 notelayer.json: 표시 자리·설명·번역·요약 원본. 다른 기기의 notelayer 에서 이 PDF 를 열면 그대로 되살아난다
   // 주석은 작성자(T)를 notelayer 로 달아, 다시 내보낼 때 예전 것을 지우고 새로 넣는다
@@ -604,16 +604,25 @@
           C: hexRgb(s.c), BS: { W: s.w }, ...(s.hl ? { CA: 0.38 } : {}), Contents: text(s.hl ? "형광펜(손글씨)" : "손글씨") });
         strokes++;
       }
-      // 요약: 1쪽 왼쪽 위 메모에 개념 구조를 들여쓰기로
-      const cs = L.concepts;
-      if (cs?.nodes?.length && allPages[0]) {
+      // 요약: 1쪽 왼쪽 위 메모에 개념 구조를 들여쓰기로, 그 아래에 본문에 점선으로 그은 용어 풀이를.
+      // 용어 뜻은 문단 설명에 되풀이하지 않으므로(작은 창에서 본다) PDF 에는 여기에만 남는다
+      const cs = L.concepts, terms = L.terms || [];
+      const lines = [];
+      if (cs?.nodes?.length) {
         const kids = new Map();
         for (const n of cs.nodes) { if (!kids.has(n.parent)) kids.set(n.parent, []); kids.get(n.parent).push(n); }
-        const lines = [`[요약] ${cs.topic}`], seen = new Set();
+        lines.push(`[요약] ${cs.topic}`);
+        const seen = new Set();
         const walk = (pid, d) => { for (const n of kids.get(pid) || []) { if (seen.has(n.id)) continue; seen.add(n.id);
           lines.push(`${"  ".repeat(d)}${d ? "–" : "•"} ${n.term}${n.gloss ? ` — ${n.gloss}` : ""}`); walk(n.id, d + 1); } };
         walk(null, 0);
         for (const l of cs.links || []) { const a = cs.nodes.find((n) => n.id === l.from), b = cs.nodes.find((n) => n.id === l.to); if (a && b) lines.push(`↪ ${a.term} → ${b.term} (${l.label})`); }
+      }
+      if (terms.length) {
+        if (lines.length) lines.push("");
+        lines.push("[용어]", ...terms.map((t) => `• ${t.term}${t.gloss ? ` — ${t.gloss}` : ""}${t.def ? "" : " (원문에 정의 없음, AI 풀이)"}`));
+      }
+      if (lines.length && allPages[0]) {
         const p = allPages[0], [x1, y1] = pt(p, 6, 24), [x2, y2] = pt(p, 24, 6);
         add(p, { Subtype: "Text", Name: "Note", Open: false, Rect: [Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2)], C: [0.39, 0.4, 0.95], Contents: text(lines.join("\n")) });
       }
@@ -623,7 +632,7 @@
         creationDate: new Date(), modificationDate: new Date() });
       const out = await doc.save();
       download(new Blob([out], { type: "application/pdf" }), `${rec.name.replace(/\.pdf$/i, "")} (notelayer).pdf`);
-      viewMsg(`내보냈습니다 · 주석 표시 ${marks}개, 메모 ${notes}개${strokes ? `, 손글씨 ${strokes}획` : ""}${cs?.nodes?.length ? ", 요약 메모 1개" : ""} · 기록 첨부`);
+      viewMsg(`내보냈습니다 · 주석 표시 ${marks}개, 메모 ${notes}개${strokes ? `, 손글씨 ${strokes}획` : ""}${lines.length ? ", 요약 메모 1개" : ""} · 기록 첨부`);
     } catch (err) {
       viewMsg(`내보내지 못했습니다: ${err?.message || err}`, true);
     } finally {
