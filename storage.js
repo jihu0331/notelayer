@@ -97,7 +97,7 @@
     if (s.length > MAX_BYTES) throw new Error("저장할 내용이 너무 큽니다");
     return JSON.parse(s);
   }
-  const counts = (data) => ({ marks: Array.isArray(data?.marks) ? data.marks.length : 0, boxes: Array.isArray(data?.boxes) ? data.boxes.length : 0 });
+  const counts = (data) => ({ marks: Array.isArray(data?.marks) ? data.marks.filter((m) => m?.mine).length : 0 /* 예전 저장본의 AI 표시는 더 보이지 않으니 세지 않는다 */, boxes: Array.isArray(data?.boxes) ? data.boxes.length : 0 });
 
   // ── 기록 꺼내기·저장·지우기 (표시 층이 보낸 요청 하나를 처리해 답을 돌려준다) ──
   async function handle(d) {

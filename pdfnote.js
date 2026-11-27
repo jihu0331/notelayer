@@ -235,7 +235,7 @@
       const c = S.counts(d.rec?.data);
       const meta = d.folderOnly ? ["연결한 폴더에만 있음 — 열면 이 브라우저로 가져옵니다"]
         : [`${d.pages}쪽`, size(d.size), `넣은 날 ${fmt(d.addedAt)}`];
-      if (d.rec) meta.push(`표시 ${c.marks} · 설명 ${c.boxes}`, `저장 ${fmt(d.rec.savedAt)}`);
+      if (d.rec) meta.push(`${c.marks ? `내 표시 ${c.marks} · ` : ""}설명 ${c.boxes}`, `저장 ${fmt(d.rec.savedAt)}`);
       return el("li", {},
         el("div", { class: "grow" },
           el("a", { class: "name", href: `pdf.html?doc=${encodeURIComponent(d.id)}`, title: d.name }, d.name),
@@ -487,7 +487,7 @@
 
   // ── 주석 넣은 PDF 내보내기 / 첨부된 기록 되살리기 ──
   // 내보낸 PDF 한 장에 두 가지를 담는다.
-  //  1) PDF 표준 주석: 핵심어=밑줄(Underline), 중요한 문장=형광펜(Highlight), 확인 필요=물결 밑줄(Squiggly),
+  //  1) PDF 표준 주석: 내가 단 표시(동그라미 자리=밑줄 Underline, 형광펜=Highlight, 물결=Squiggly),
   //     문단별 번역·설명=메모(Text), 1쪽 왼쪽 위에 요약 메모. 굿노트·삼성 노트·PDF 뷰어에서 보인다
   //  2) 첨부 파일 notelayer.json: 표시 자리·설명·번역·요약 원본. 다른 기기의 notelayer 에서 이 PDF 를 열면 그대로 되살아난다
   // 주석은 작성자(T)를 notelayer 로 달아, 다시 내보낼 때 예전 것을 지우고 새로 넣는다

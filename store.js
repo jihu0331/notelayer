@@ -120,8 +120,8 @@
       !current ? (opener ? "표시 층과 연결을 기다리는 중…" : "웹페이지에서 「notelayer 켜기」를 누르면 이 창이 그 페이지와 연결됩니다.")
         : el("div", {}, el("div", { class: "title" }, current.title || current.key),
           el("div", { class: cur ? "muted ok" : "muted" }, cur
-            ? `저장됨 · ${fmt(cur.savedAt)} · 표시 ${counts(cur.data).marks}개 · 설명 ${counts(cur.data).boxes}개`
-            : "아직 저장한 표시가 없습니다. 답을 적용하거나 고치면 자동으로 저장됩니다."),
+            ? `저장됨 · ${fmt(cur.savedAt)} ${counts(cur.data).marks ? ` · 내 표시 ${counts(cur.data).marks}개` : ""} · 설명 ${counts(cur.data).boxes}개`
+            : "아직 저장한 기록이 없습니다. 답을 적용하거나 고치면 자동으로 저장됩니다."),
           opener?.closed ? el("div", { class: "muted" }, "원래 페이지가 닫혔습니다. 이 창은 닫아도 됩니다.") : null,
           cur ? el("div", { class: "row" }, el("button", { onclick: () => download(cur) }, "이 페이지 파일로 내려받기")) : null));
     // 폴더
@@ -169,7 +169,7 @@
       return el("li", { class: current?.key === p.key ? "here" : "" },
         el("div", { class: "grow" },
           url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", title: url }, p.title || url) : el("span", { class: "title" }, p.title || p.key),
-          el("div", { class: "muted" }, `${host} · ${fmt(p.savedAt)} · 표시 ${c.marks} · 설명 ${c.boxes}`)),
+          el("div", { class: "muted" }, `${host} · ${fmt(p.savedAt)} ${c.marks ? ` · 내 표시 ${c.marks}` : ""} · 설명 ${c.boxes}`)),
         el("button", { title: "파일로 내려받기", onclick: () => download(p) }, "⤓"),
         el("button", { title: "지우기", onclick: async () => {
           if (!confirm(`「${p.title || p.key}」 에 저장한 표시를 지울까요?`)) return;

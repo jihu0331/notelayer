@@ -286,11 +286,18 @@
       return null;
     };
     const ctxOf = (m) => (typeof m.prefix === "string" || typeof m.suffix === "string" ? { prefix: String(m.prefix || ""), suffix: String(m.suffix || "") } : null);
-    const raw = (Array.isArray(result.marks) ? result.marks : [])
-      .filter((m) => m && KINDS.includes(m.kind) && typeof m.quote === "string" && squash(m.quote));
+    // AI 가 고른 표시(핵심어·중요 문장·물결)는 받지 않는다. 용어 풀이·설명 상자와 할 일이 겹치고, 왜 쳤는지 보이지 않았다.
+    // 수정 가능 모드에서 내가 직접 단 표시(mine)만 되살린다
+    const isMark = (m) => m && KINDS.includes(m.kind) && typeof m.quote === "string" && squash(m.quote);
+    const all = Array.isArray(result.marks) ? result.marks.filter(isMark) : [];
+    const raw = all.filter((m) => m.mine);
     const pOf = (m) => (Number.isFinite(Number(m.p)) ? Number(m.p) : 1);
+    // 문단 번호가 어긋난 정도는 원문 그대로의 긴 인용에서 배운다: 표시·퀴즈 근거·개념과 용어의 정의
+    const quotes = (list) => (Array.isArray(list) ? list : []).filter((x) => x && typeof x.quote === "string");
+    const samples = [...all, ...quotes(result.quiz),
+      ...quotes([...(Array.isArray(result.concepts?.nodes) ? result.concepts.nodes : []), ...(Array.isArray(result.terms) ? result.terms : [])].map((x) => x?.def))];
     const learned = [];
-    for (const m of raw) {
+    for (const m of samples) {
       if (squash(m.quote).length < 12) continue;
       const f = findPara(m.quote, at(pOf(m) - 1), 0, ctxOf(m));
       if (f && !f.hit.moved) learned.push([pOf(m), f.i]);
@@ -1362,9 +1369,9 @@
     pill.replaceChildren(
       head,
       h("div", { class: "mini-items" }, hasData()
-        ? [item("circle", h("span", { class: "mk mk-key" }, "가"), t.marks.circle, n("circle")),
-          item("highlight", h("span", { class: "mk mk-hl" }), t.marks.highlight, n("highlight")),
-          item("wave", h("span", { class: "mk mk-wave" }), t.marks.wave, n("wave")),
+        ? [...(n("circle") ? [item("circle", h("span", { class: "mk mk-key" }, "가"), t.marks.circle, n("circle"))] : []),
+          ...(n("highlight") ? [item("highlight", h("span", { class: "mk mk-hl" }), t.marks.highlight, n("highlight"))] : []),
+          ...(n("wave") ? [item("wave", h("span", { class: "mk mk-wave" }), t.marks.wave, n("wave"))] : []),
           item("boxes", null, "설명", state.boxes.length),
           ...(state.imps.length ? [eyeOnly("imp", "중요도", state.imps.length)] : []),
           ...(state.trs.size ? [eyeOnly("tr", "번역", state.trs.size)] : []),
@@ -1590,8 +1597,8 @@
   // 새 AI 답은 AI 것만 바꾸고 내가 단 표시·설명은 남긴다(notelayer 화면과 같은 규칙). 저장본을 열 때는 그대로 되살린다
   function apply(result, { restored = false } = {}) {
     if (!restored && result?.add) return applyAdd(result);
-    if (!restored && (state.marks.some((m) => !m.mine) || state.boxes.some((b) => !b.mine))
-      && !confirm("지금 있는 AI 표시·설명을 이 답으로 바꿀까요? 내가 단 표시와 설명은 남습니다.")) return null;
+    if (!restored && state.boxes.some((b) => !b.mine)
+      && !confirm("지금 있는 AI 설명을 이 답으로 바꿀까요? 내가 단 표시와 설명은 남습니다.")) return null;
     const a = anchor(result);
     // 내가 남긴 것(옮기거나 고친 AI 표시·설명 포함)과 글이 같은 새 표시·설명은 건너뛴다(같은 설명이 두 번 붙지 않게)
     const myMarks = state.marks.filter((m) => m.mine), myBoxes = state.boxes.filter((b) => b.mine);
@@ -1626,7 +1633,8 @@
     if (!restored || a.moved) save(); // 자리를 다시 잡은 표시는 새 구절·앞뒤 글자로 저장해 둔다
     tuckIfCovering();
     const placed = a.marks.length;
-    const parts = [`${restored ? "저장한 " : ""}표시 ${placed}/${a.total}개, 설명 ${a.boxes.length}개를 얹었습니다`];
+    const parts = [`${restored ? "저장한 " : ""}설명 ${a.boxes.length}개를 얹었습니다`];
+    if (placed) parts.push(`내 표시 ${placed}개`);
     if (state.concepts) parts.push(`개념 ${state.concepts.nodes.length}개`);
     if (termOccs.length) parts.push(`용어 풀이 ${termOccs.length}곳`);
     if (a.trs.length) parts.push(`번역 ${a.trs.length}문단`);
@@ -1636,7 +1644,7 @@
     if (a.lost.length) parts.push(restored
       ? `\n제자리를 잃은 표시 ${a.lost.length}개 — 원문이 바뀌어 찾지 못했습니다. 패널 위쪽 목록에서 다시 붙이거나 지울 수 있습니다`
       : `\n원문에서 찾지 못한 표시 ${a.lost.length}개: ${a.lost.slice(0, 4).map((x) => `「${x.quote}」`).join(", ")}${a.lost.length > 4 ? " …" : ""}`);
-    if (!window.CSS?.highlights) parts.push("\n이 브라우저는 형광펜·물결 칠하기를 지원하지 않습니다(크롬 계열 권장).");
+    if (!window.CSS?.highlights) parts.push("\n이 브라우저는 본문 칠하기(용어 점선·내 표시)를 지원하지 않습니다(크롬 계열 권장).");
     setMsg(applyMsg, parts.join(" · "));
     steps.open = false;
     return { placed, total: a.total, boxes: a.boxes.length, lost: a.lost.map((x) => x.quote), moved: a.moved, orphans: state.orphans.length };
@@ -1687,9 +1695,9 @@
     const toggle = (key, ...label) => h("button", { "aria-pressed": String(state.show[key]),
       onclick: () => setShow(key, !state.show[key]) }, ...label);
     legend.replaceChildren(
-      toggle("circle", h("span", { class: "sw sw-key" }, "가"), `${t.marks.circle} ${count("circle")}`),
-      toggle("highlight", h("span", { class: "sw sw-hl" }), `${t.marks.highlight} ${count("highlight")}`),
-      toggle("wave", h("span", { class: "sw sw-wave" }), `${t.marks.wave} ${count("wave")}`),
+      ...(count("circle") ? [toggle("circle", h("span", { class: "sw sw-key" }, "가"), `${t.marks.circle} ${count("circle")}`)] : []),
+      ...(count("highlight") ? [toggle("highlight", h("span", { class: "sw sw-hl" }), `${t.marks.highlight} ${count("highlight")}`)] : []),
+      ...(count("wave") ? [toggle("wave", h("span", { class: "sw sw-wave" }), `${t.marks.wave} ${count("wave")}`)] : []),
       toggle("boxes", `설명 ${state.boxes.length}`),
       ...(state.imps.length ? [toggle("imp", `중요도 ${state.imps.length}`)] : []),
       ...(INLINE_ONLY ? [] : [h("button", { title: "설명 카드를 문단 아래(본문 속)에 둘지, 옆 패널과 배지로 볼지", onclick: () => {

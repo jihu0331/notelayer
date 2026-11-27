@@ -154,53 +154,6 @@ window.NL_DOCS.push({
         { "p": 5, "to": 5, "level": "core", "why": "HTTP/3 비교로 자주 나옴" },
         { "p": 6, "to": 6, "level": "some", "why": "응용 문제에만 나옴" }
       ],
-      "marks": [
-        {
-          "p": 1,
-          "kind": "circle",
-          "quote": "HOL 블로킹"
-        },
-        {
-          "p": 3,
-          "kind": "circle",
-          "quote": "멀티플렉싱"
-        },
-        {
-          "p": 4,
-          "kind": "circle",
-          "quote": "HPACK"
-        },
-        {
-          "p": 6,
-          "kind": "circle",
-          "quote": "ALPN"
-        },
-        {
-          "p": 1,
-          "kind": "highlight",
-          "quote": "앞의 응답이 늦어지면 뒤의 요청이 모두 기다리는"
-        },
-        {
-          "p": 3,
-          "kind": "highlight",
-          "quote": "하나의 TCP 연결 위에서 여러 요청과 응답을 동시에 주고받는다"
-        },
-        {
-          "p": 5,
-          "kind": "highlight",
-          "quote": "TCP 층의 HOL 블로킹은 남은 것이다"
-        },
-        {
-          "p": 2,
-          "kind": "wave",
-          "quote": "파이프라이닝이라는 방식도 표준에 있었지만"
-        },
-        {
-          "p": 6,
-          "kind": "wave",
-          "quote": "보안 연결(HTTPS) 위의 HTTP/2만"
-        }
-      ],
       "boxes": [
         {
           "p": 1,
@@ -470,53 +423,6 @@ window.NL_DOCS.push({
       }
     },
     "tech": {
-      "marks": [
-        {
-          "p": 2,
-          "kind": "circle",
-          "quote": "TCP 핸드셰이크"
-        },
-        {
-          "p": 2,
-          "kind": "circle",
-          "quote": "TLS 협상"
-        },
-        {
-          "p": 3,
-          "kind": "circle",
-          "quote": "프레임"
-        },
-        {
-          "p": 3,
-          "kind": "circle",
-          "quote": "스트림 번호"
-        },
-        {
-          "p": 5,
-          "kind": "circle",
-          "quote": "UDP"
-        },
-        {
-          "p": 4,
-          "kind": "highlight",
-          "quote": "한 번 보낸 헤더는 양쪽이 기억해 두었다가 다음에는 번호만 보낸다"
-        },
-        {
-          "p": 6,
-          "kind": "highlight",
-          "quote": "브라우저에서는 보안 연결(HTTPS) 위의 HTTP/2만 쓸 수 있다"
-        },
-        {
-          "p": 2,
-          "kind": "wave",
-          "quote": "도메인 하나에 연결을 여러 개 열었다"
-        },
-        {
-          "p": 5,
-          "kind": "wave",
-          "quote": "패킷 하나가 사라지면"
-        }
-      ],
       "boxes": [
         {
           "p": 1,
